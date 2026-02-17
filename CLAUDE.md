@@ -2,11 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-See also the workspace-level [../../CLAUDE.md](../../CLAUDE.md) for full architecture details, patterns, and constraints. This file covers ltk-manager-specific context.
+This file is the primary guidance document for the ltk-manager codebase.
 
 ## Commands
 
-All commands run from `crates/ltk-manager/`.
+All commands run from the repo root.
 
 ```bash
 # Full dev mode (Rust backend + React frontend with hot reload)

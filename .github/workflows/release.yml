@@ -1,0 +1,88 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (e.g., 0.1.0)"
+        required: true
+        type: string
+      prerelease:
+        description: "Mark as pre-release"
+        required: false
+        type: boolean
+        default: false
+  push:
+    tags:
+      - "v*"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+
+      - uses: dtolnay/rust-toolchain@stable
+        with: { targets: x86_64-pc-windows-msvc }
+
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: src-tauri }
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Determine version
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
+            echo "tag=v${{ inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "tag=$GITHUB_REF_NAME" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update version in tauri.conf.json
+        working-directory: src-tauri
+        shell: pwsh
+        run: |
+          $config = Get-Content tauri.conf.json | ConvertFrom-Json
+          $config.version = "${{ steps.version.outputs.version }}"
+          $config | ConvertTo-Json -Depth 10 | Set-Content tauri.conf.json
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ steps.version.outputs.tag }}
+          releaseName: "LTK Manager v${{ steps.version.outputs.version }}"
+          releaseBody: |
+            ## LTK Manager v${{ steps.version.outputs.version }}
+
+            ### Installation
+
+            **Windows:**
+            - Download the `.msi` installer for a standard installation
+            - Or download the `.nsis.zip` for a portable version
+
+            The app will automatically check for updates and notify you when a new version is available.
+          releaseDraft: true
+          prerelease: ${{ inputs.prerelease || false }}
+          includeUpdaterJson: true
+          updaterJsonPreferNsis: true
