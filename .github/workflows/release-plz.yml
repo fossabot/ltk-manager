@@ -99,11 +99,9 @@ jobs:
 
             # MSI only supports numeric pre-release identifiers, so skip it for semver pre-releases like "beta.1"
             if ($version -match '-') {
-              echo "bundles=nsis" >> $env:GITHUB_OUTPUT
               echo "is_prerelease=true" >> $env:GITHUB_OUTPUT
               echo "Found pre-release: $tag v$version - building NSIS only"
             } else {
-              echo "bundles=nsis,msi" >> $env:GITHUB_OUTPUT
               echo "is_prerelease=false" >> $env:GITHUB_OUTPUT
               echo "Found release: $tag v$version - building NSIS + MSI"
             }
@@ -112,18 +110,24 @@ jobs:
             echo "should_build=false" >> $env:GITHUB_OUTPUT
           }
 
-      - name: Update version in tauri.conf.json
+      - name: Update tauri.conf.json for release
         if: steps.release_info.outputs.should_build == 'true'
         working-directory: src-tauri
         shell: powershell
         run: |
           $config = Get-Content tauri.conf.json | ConvertFrom-Json
           $config.version = "${{ steps.release_info.outputs.version }}"
+
+          # MSI only supports numeric pre-release identifiers, so skip it for semver pre-releases
+          if ("${{ steps.release_info.outputs.is_prerelease }}" -eq "true") {
+            $config.bundle.targets = @("nsis")
+          }
+
           $config | ConvertTo-Json -Depth 10 | Set-Content tauri.conf.json
 
       - name: Build Tauri app
         if: steps.release_info.outputs.should_build == 'true'
-        run: pnpm tauri build --bundles ${{ steps.release_info.outputs.bundles }}
+        run: pnpm tauri build
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -136,9 +140,10 @@ jobs:
           $tag = "${{ steps.release_info.outputs.tag }}"
           $bundlePath = "src-tauri/target/release/bundle"
 
-          $nsisZip = Get-ChildItem "$bundlePath/nsis/*.nsis.zip" | Select-Object -First 1
-          $nsisSig = (Get-Content "$($nsisZip.FullName).sig" -Raw).Trim()
-          $downloadUrl = "https://github.com/LeagueToolkit/ltk-manager/releases/download/$tag/$($nsisZip.Name)"
+          # v2 updater artifacts: .exe + .exe.sig (not .nsis.zip)
+          $nsisExe = Get-ChildItem "$bundlePath/nsis/*.exe" | Select-Object -First 1
+          $nsisSig = (Get-Content "$($nsisExe.FullName).sig" -Raw).Trim()
+          $downloadUrl = "https://github.com/LeagueToolkit/ltk-manager/releases/download/$tag/$($nsisExe.Name)"
 
           $latest = @{
             version  = $version
@@ -162,8 +167,7 @@ jobs:
           tag_name: ${{ steps.release_info.outputs.tag }}
           files: |
             src-tauri/target/release/bundle/nsis/*.exe
-            src-tauri/target/release/bundle/nsis/*.nsis.zip
-            src-tauri/target/release/bundle/nsis/*.nsis.zip.sig
+            src-tauri/target/release/bundle/nsis/*.exe.sig
             latest.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -175,7 +179,6 @@ jobs:
           tag_name: ${{ steps.release_info.outputs.tag }}
           files: |
             src-tauri/target/release/bundle/msi/*.msi
-            src-tauri/target/release/bundle/msi/*.msi.zip
-            src-tauri/target/release/bundle/msi/*.msi.zip.sig
+            src-tauri/target/release/bundle/msi/*.msi.sig
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
