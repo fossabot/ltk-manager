@@ -41,6 +41,7 @@ export function SortableModCard({
         <div
           className="absolute top-1/2 -left-7 z-10 flex -translate-y-1/2 cursor-grab items-center opacity-0 transition-opacity group-hover/sortable:opacity-100"
           data-no-toggle
+          onClick={(e) => e.stopPropagation()}
           {...attributes}
           {...listeners}
         >
@@ -51,6 +52,7 @@ export function SortableModCard({
         <div
           className="absolute top-2 left-2 z-10 flex cursor-grab items-center rounded-md bg-surface-900/80 p-1 opacity-0 backdrop-blur-sm transition-opacity group-hover/sortable:opacity-100"
           data-no-toggle
+          onClick={(e) => e.stopPropagation()}
           {...attributes}
           {...listeners}
         >

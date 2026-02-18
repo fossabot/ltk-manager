@@ -91,7 +91,7 @@ export function ModCard({
         </div>
 
         {/* Toggle */}
-        <div data-no-toggle>
+        <div data-no-toggle onClick={(e) => e.stopPropagation()}>
           <Switch
             disabled={disabled}
             checked={mod.enabled}
@@ -100,7 +100,7 @@ export function ModCard({
         </div>
 
         {/* Menu */}
-        <div data-no-toggle>
+        <div data-no-toggle onClick={(e) => e.stopPropagation()}>
           <Menu.Root>
             <Menu.Trigger
               disabled={disabled}
@@ -161,7 +161,11 @@ export function ModCard({
       }`}
     >
       {/* Toggle in top-right corner */}
-      <div className="absolute top-2 right-2 z-10" data-no-toggle>
+      <div
+        className="absolute top-2 right-2 z-10"
+        data-no-toggle
+        onClick={(e) => e.stopPropagation()}
+      >
         <Switch
           size="sm"
           disabled={disabled}
@@ -196,7 +200,7 @@ export function ModCard({
           <span className="flex-1 truncate">
             {mod.authors.length > 0 ? mod.authors[0] : "Unknown"}
           </span>
-          <div className="ml-1 shrink-0" data-no-toggle>
+          <div className="ml-1 shrink-0" data-no-toggle onClick={(e) => e.stopPropagation()}>
             <Menu.Root>
               <Menu.Trigger
                 disabled={disabled}

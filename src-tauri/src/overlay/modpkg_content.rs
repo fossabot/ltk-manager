@@ -3,8 +3,9 @@ use ltk_mod_project::{ModProject, ModProjectAuthor, ModProjectLayer};
 use ltk_modpkg::Modpkg;
 use ltk_overlay::content::ModContentProvider;
 use ltk_overlay::error::Result;
+use ltk_wad::Wad;
 use std::collections::HashSet;
-use std::io::{Read, Seek};
+use std::io::{Cursor, Read, Seek};
 
 /// Content provider that reads directly from a mounted `.modpkg` archive.
 pub struct ModpkgContent<R: Read + Seek> {
@@ -129,6 +130,67 @@ impl<R: Read + Seek + Send> ModContentProvider for ModpkgContent<R> {
                     ))
                 })?;
             results.push((Utf8PathBuf::from(rel_path), bytes.into_vec()));
+        }
+
+        if !results.is_empty() {
+            return Ok(results);
+        }
+
+        // No directory-style entries found — check for a packed WAD chunk
+        // (where the chunk path IS the WAD name with no sub-path)
+        for &(path_hash, chunk_layer_hash) in self.modpkg.chunks.keys() {
+            if chunk_layer_hash != layer_hash {
+                continue;
+            }
+            let path = match self.modpkg.chunk_paths.get(&path_hash) {
+                Some(p) => p,
+                None => continue,
+            };
+            if path.as_str() == wad_name {
+                return self.read_packed_wad_entries(path_hash, layer_hash);
+            }
+        }
+
+        Ok(Vec::new())
+    }
+}
+
+impl<R: Read + Seek + Send> ModpkgContent<R> {
+    /// Read a packed WAD from a modpkg chunk and return its entries as override files.
+    ///
+    /// Each WAD entry is returned with a hex-hash filename (e.g., "0123456789abcdef.bin")
+    /// which the overlay builder's `resolve_chunk_hash` can interpret directly.
+    fn read_packed_wad_entries(
+        &mut self,
+        path_hash: u64,
+        layer_hash: u64,
+    ) -> Result<Vec<(Utf8PathBuf, Vec<u8>)>> {
+        let wad_data = self
+            .modpkg
+            .load_chunk_decompressed_by_hash(path_hash, layer_hash)
+            .map_err(|e| {
+                ltk_overlay::Error::Other(format!(
+                    "Failed to decompress packed WAD chunk {:016x}: {}",
+                    path_hash, e
+                ))
+            })?;
+
+        let cursor = Cursor::new(wad_data.into_vec());
+        let mut wad = Wad::mount(cursor)?;
+
+        let wad_path_hashes: Vec<u64> = wad.chunks().iter().map(|c| c.path_hash).collect();
+        let mut results = Vec::with_capacity(wad_path_hashes.len());
+
+        for wad_path_hash in wad_path_hashes {
+            let chunk = *wad.chunks().get(wad_path_hash).ok_or_else(|| {
+                ltk_overlay::Error::Other(format!("WAD chunk {:016x} disappeared", wad_path_hash))
+            })?;
+
+            let bytes = wad.load_chunk_decompressed(&chunk)?.to_vec();
+
+            // Use hex hash as filename — resolve_chunk_hash will parse it correctly
+            let hex_name = format!("{:016x}.bin", wad_path_hash);
+            results.push((Utf8PathBuf::from(hex_name), bytes));
         }
 
         Ok(results)
