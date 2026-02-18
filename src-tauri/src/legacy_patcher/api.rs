@@ -9,7 +9,7 @@ use crate::utils::native::{cstr_to_str, str_to_cstr_utf16};
 /// Bundled legacy patcher DLL (C implementation).
 ///
 /// This must match the relative path inside `src-tauri/resources/`.
-pub const PATCHER_DLL_NAME: &str = "legacy-patcher/cslol-dll.dll";
+pub const PATCHER_DLL_NAME: &str = "cslol-dll.dll";
 
 #[repr(u64)]
 #[allow(dead_code)]
