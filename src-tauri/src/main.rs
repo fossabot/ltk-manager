@@ -18,6 +18,7 @@ pub mod patcher;
 mod state;
 mod utils;
 
+use mods::{ModLibrary, ModLibraryState};
 use patcher::PatcherState;
 use state::SettingsState;
 
@@ -94,6 +95,7 @@ fn main() {
             // Create individual states
             let settings_state = SettingsState::new(app_handle);
             let patcher_state = PatcherState::new();
+            let mod_library = ModLibraryState(ModLibrary::new(app_handle));
 
             // Run first-run initialization (auto-detect League path)
             initialize_first_run(app_handle, &settings_state);
@@ -101,6 +103,7 @@ fn main() {
             // Manage each state separately
             app.manage(settings_state);
             app.manage(patcher_state);
+            app.manage(mod_library);
 
             Ok(())
         })

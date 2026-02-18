@@ -5,184 +5,349 @@ use ltk_mod_project::{ModProject, ModProjectLayer};
 use ltk_modpkg::Modpkg;
 use std::fs;
 use std::path::{Path, PathBuf};
-use tauri::AppHandle;
 use uuid::Uuid;
 
 use super::{
-    load_library_index, resolve_storage_dir, save_library_index, BulkInstallError,
-    BulkInstallResult, InstallProgress, InstalledMod, LibraryIndex, LibraryModEntry,
-    ModArchiveFormat, ModLayer,
+    load_library_index, save_library_index, BulkInstallError, BulkInstallResult, InstallProgress,
+    InstalledMod, LibraryIndex, LibraryModEntry, ModArchiveFormat, ModLayer, ModLibrary,
 };
 use tauri::Emitter;
 
-pub fn get_installed_mods(
-    app_handle: &AppHandle,
-    settings: &Settings,
-) -> AppResult<Vec<InstalledMod>> {
-    let storage_dir = resolve_storage_dir(app_handle, settings)?;
-    let index = load_library_index(&storage_dir)?;
+impl ModLibrary {
+    pub fn get_installed_mods(&self, settings: &Settings) -> AppResult<Vec<InstalledMod>> {
+        self.with_index(settings, |storage_dir, index| {
+            let active_profile_id = index.active_profile_id.clone();
+            let active_profile = index
+                .profiles
+                .iter()
+                .find(|p| p.id == active_profile_id)
+                .ok_or_else(|| AppError::Other("Active profile not found".to_string()))?;
 
-    // Get active profile to check enabled mods
-    let active_profile_id = index.active_profile_id.clone();
-    let active_profile = index
-        .profiles
-        .iter()
-        .find(|p| p.id == active_profile_id)
-        .ok_or_else(|| AppError::Other("Active profile not found".to_string()))?;
+            let enabled_set: std::collections::HashSet<&str> = active_profile
+                .enabled_mods
+                .iter()
+                .map(|s| s.as_str())
+                .collect();
 
-    let enabled_set: std::collections::HashSet<&str> = active_profile
-        .enabled_mods
-        .iter()
-        .map(|s| s.as_str())
-        .collect();
+            let mut result = Vec::new();
+            for mod_id in &active_profile.mod_order {
+                let Some(entry) = index.mods.iter().find(|m| &m.id == mod_id) else {
+                    continue;
+                };
+                let enabled = enabled_set.contains(mod_id.as_str());
+                match read_installed_mod(entry, enabled, storage_dir) {
+                    Ok(m) => result.push(m),
+                    Err(e) => {
+                        tracing::warn!("Skipping broken mod entry {}: {}", entry.id, e);
+                    }
+                }
+            }
 
-    let mut result = Vec::new();
-    for mod_id in &active_profile.mod_order {
-        let Some(entry) = index.mods.iter().find(|m| &m.id == mod_id) else {
-            continue;
-        };
-        let enabled = enabled_set.contains(mod_id.as_str());
-        match read_installed_mod(entry, enabled, &storage_dir) {
-            Ok(m) => result.push(m),
-            Err(e) => {
-                tracing::warn!("Skipping broken mod entry {}: {}", entry.id, e);
+            Ok(result)
+        })
+    }
+
+    /// Reorder all mods for the active profile.
+    /// The provided `mod_ids` must exactly match all installed mod IDs.
+    /// The `enabled_mods` order is derived from the new display order.
+    pub fn reorder_mods(&self, settings: &Settings, mod_ids: Vec<String>) -> AppResult<()> {
+        self.mutate_index(settings, |_storage_dir, index| {
+            let active_profile_id = index.active_profile_id.clone();
+            let profile = index
+                .profiles
+                .iter_mut()
+                .find(|p| p.id == active_profile_id)
+                .ok_or_else(|| AppError::Other("Active profile not found".to_string()))?;
+
+            // Validate that the provided IDs exactly match all installed mods
+            let mut installed_sorted: Vec<&str> =
+                index.mods.iter().map(|m| m.id.as_str()).collect();
+            installed_sorted.sort();
+            let mut new_sorted: Vec<&str> = mod_ids.iter().map(|s| s.as_str()).collect();
+            new_sorted.sort();
+
+            if installed_sorted != new_sorted {
+                return Err(AppError::ValidationFailed(
+                    "Provided mod IDs do not match the installed mods".to_string(),
+                ));
+            }
+
+            // Derive enabled_mods order from new display order
+            let enabled_set: std::collections::HashSet<&str> =
+                profile.enabled_mods.iter().map(|s| s.as_str()).collect();
+            profile.enabled_mods = mod_ids
+                .iter()
+                .filter(|id| enabled_set.contains(id.as_str()))
+                .cloned()
+                .collect();
+
+            profile.mod_order = mod_ids;
+
+            Ok(())
+        })
+    }
+
+    pub fn install_mod_from_package(
+        &self,
+        settings: &Settings,
+        file_path: &str,
+    ) -> AppResult<InstalledMod> {
+        self.mutate_index(settings, |storage_dir, index| {
+            let (_entry, installed_mod) =
+                install_single_mod_to_index(storage_dir, index, file_path)?;
+            Ok(installed_mod)
+        })
+    }
+
+    /// Install multiple mods in a single batch operation.
+    ///
+    /// Loads `library.json` once, installs each mod, saves once, and invalidates
+    /// the overlay once. Emits `"install-progress"` events per file.
+    pub fn install_mods_from_packages(
+        &self,
+        settings: &Settings,
+        file_paths: &[String],
+    ) -> AppResult<BulkInstallResult> {
+        if file_paths.is_empty() {
+            return Ok(BulkInstallResult {
+                installed: Vec::new(),
+                failed: Vec::new(),
+            });
+        }
+
+        let storage_dir = self.storage_dir(settings)?;
+        let mut index = load_library_index(&storage_dir)?;
+
+        let total = file_paths.len();
+        let mut installed = Vec::new();
+        let mut failed = Vec::new();
+
+        for (i, file_path) in file_paths.iter().enumerate() {
+            let file_name = Path::new(file_path)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(file_path)
+                .to_string();
+
+            let _ = self.app_handle().emit(
+                "install-progress",
+                InstallProgress {
+                    current: i + 1,
+                    total,
+                    current_file: file_name.clone(),
+                },
+            );
+
+            match install_single_mod_to_index(&storage_dir, &mut index, file_path) {
+                Ok((_entry, mod_info)) => {
+                    installed.push(mod_info);
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to install {}: {}", file_path, e);
+                    failed.push(BulkInstallError {
+                        file_path: file_path.clone(),
+                        file_name,
+                        message: e.to_string(),
+                    });
+                }
             }
         }
+
+        save_library_index(&storage_dir, &index)?;
+
+        if let Err(e) = self.invalidate_overlay(settings) {
+            tracing::warn!("Failed to invalidate overlay after bulk install: {}", e);
+        }
+
+        Ok(BulkInstallResult { installed, failed })
     }
 
-    Ok(result)
-}
-
-/// Reorder all mods for the active profile.
-/// The provided `mod_ids` must exactly match all installed mod IDs.
-/// The `enabled_mods` order is derived from the new display order.
-pub fn reorder_mods(
-    app_handle: &AppHandle,
-    settings: &Settings,
-    mod_ids: Vec<String>,
-) -> AppResult<()> {
-    let storage_dir = resolve_storage_dir(app_handle, settings)?;
-    let mut index = load_library_index(&storage_dir)?;
-
-    let active_profile_id = index.active_profile_id.clone();
-    let profile = index
-        .profiles
-        .iter_mut()
-        .find(|p| p.id == active_profile_id)
-        .ok_or_else(|| AppError::Other("Active profile not found".to_string()))?;
-
-    // Validate that the provided IDs exactly match all installed mods
-    let mut installed_sorted: Vec<&str> = index.mods.iter().map(|m| m.id.as_str()).collect();
-    installed_sorted.sort();
-    let mut new_sorted: Vec<&str> = mod_ids.iter().map(|s| s.as_str()).collect();
-    new_sorted.sort();
-
-    if installed_sorted != new_sorted {
-        return Err(AppError::ValidationFailed(
-            "Provided mod IDs do not match the installed mods".to_string(),
-        ));
-    }
-
-    // Derive enabled_mods order from new display order
-    let enabled_set: std::collections::HashSet<&str> =
-        profile.enabled_mods.iter().map(|s| s.as_str()).collect();
-    profile.enabled_mods = mod_ids
-        .iter()
-        .filter(|id| enabled_set.contains(id.as_str()))
-        .cloned()
-        .collect();
-
-    profile.mod_order = mod_ids;
-    save_library_index(&storage_dir, &index)?;
-
-    if let Err(e) = crate::overlay::invalidate_overlay(app_handle, settings) {
-        tracing::warn!("Failed to invalidate overlay after reordering mods: {}", e);
-    }
-
-    Ok(())
-}
-
-pub fn install_mod_from_package(
-    app_handle: &AppHandle,
-    settings: &Settings,
-    file_path: &str,
-) -> AppResult<InstalledMod> {
-    let storage_dir = resolve_storage_dir(app_handle, settings)?;
-
-    let mut index = load_library_index(&storage_dir)?;
-
-    let (_entry, installed_mod) = install_single_mod_to_index(&storage_dir, &mut index, file_path)?;
-
-    save_library_index(&storage_dir, &index)?;
-
-    if let Err(e) = crate::overlay::invalidate_overlay(app_handle, settings) {
-        tracing::warn!("Failed to invalidate overlay after installing mod: {}", e);
-    }
-
-    Ok(installed_mod)
-}
-
-/// Install multiple mods in a single batch operation.
-///
-/// Loads `library.json` once, installs each mod, saves once, and invalidates
-/// the overlay once. Emits `"install-progress"` events per file.
-pub fn install_mods_from_packages(
-    app_handle: &AppHandle,
-    settings: &Settings,
-    file_paths: &[String],
-) -> AppResult<BulkInstallResult> {
-    if file_paths.is_empty() {
-        return Ok(BulkInstallResult {
-            installed: Vec::new(),
-            failed: Vec::new(),
-        });
-    }
-
-    let storage_dir = resolve_storage_dir(app_handle, settings)?;
-    let mut index = load_library_index(&storage_dir)?;
-
-    let total = file_paths.len();
-    let mut installed = Vec::new();
-    let mut failed = Vec::new();
-
-    for (i, file_path) in file_paths.iter().enumerate() {
-        let file_name = Path::new(file_path)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or(file_path)
-            .to_string();
-
-        let _ = app_handle.emit(
-            "install-progress",
-            InstallProgress {
-                current: i + 1,
-                total,
-                current_file: file_name.clone(),
-            },
-        );
-
-        match install_single_mod_to_index(&storage_dir, &mut index, file_path) {
-            Ok((_entry, mod_info)) => {
-                installed.push(mod_info);
+    pub fn toggle_mod_enabled(
+        &self,
+        settings: &Settings,
+        mod_id: &str,
+        enabled: bool,
+    ) -> AppResult<()> {
+        self.mutate_index(settings, |_storage_dir, index| {
+            // Validate mod exists
+            if !index.mods.iter().any(|m| m.id == mod_id) {
+                return Err(AppError::ModNotFound(mod_id.to_string()));
             }
-            Err(e) => {
-                tracing::warn!("Failed to install {}: {}", file_path, e);
-                failed.push(BulkInstallError {
-                    file_path: file_path.clone(),
-                    file_name,
-                    message: e.to_string(),
+
+            // Update active profile's enabled mods
+            let active_profile_id = index.active_profile_id.clone();
+            let profile = index
+                .profiles
+                .iter_mut()
+                .find(|p| p.id == active_profile_id)
+                .ok_or_else(|| AppError::Other("Active profile not found".to_string()))?;
+
+            if enabled {
+                if !profile.enabled_mods.contains(&mod_id.to_string()) {
+                    // Insert at position preserving relative order from mod_order
+                    let insert_pos = if let Some(order_pos) =
+                        profile.mod_order.iter().position(|id| id == mod_id)
+                    {
+                        profile
+                            .enabled_mods
+                            .iter()
+                            .position(|id| {
+                                profile
+                                    .mod_order
+                                    .iter()
+                                    .position(|oid| oid == id)
+                                    .is_none_or(|p| p > order_pos)
+                            })
+                            .unwrap_or(profile.enabled_mods.len())
+                    } else {
+                        0
+                    };
+                    profile.enabled_mods.insert(insert_pos, mod_id.to_string());
+                }
+            } else {
+                profile.enabled_mods.retain(|id| id != mod_id);
+            }
+
+            Ok(())
+        })
+    }
+
+    pub fn uninstall_mod_by_id(&self, settings: &Settings, mod_id: &str) -> AppResult<()> {
+        self.mutate_index(settings, |storage_dir, index| {
+            let Some(pos) = index.mods.iter().position(|m| m.id == mod_id) else {
+                return Err(AppError::ModNotFound(mod_id.to_string()));
+            };
+
+            let entry = index.mods.remove(pos);
+
+            // Remove from all profiles' mod_order and enabled_mods
+            for profile in &mut index.profiles {
+                profile.mod_order.retain(|id| id != mod_id);
+                profile.enabled_mods.retain(|id| id != mod_id);
+            }
+
+            // Delete metadata directory
+            let metadata_dir = entry.metadata_dir(storage_dir);
+            if metadata_dir.exists() {
+                fs::remove_dir_all(&metadata_dir)?;
+            }
+
+            // Delete archive file
+            let archive_path = entry.archive_path(storage_dir);
+            if archive_path.exists() {
+                fs::remove_file(&archive_path)?;
+                tracing::info!("Deleted mod archive at {}", archive_path.display());
+            }
+
+            Ok(())
+        })
+    }
+
+    /// Get a mod's cached thumbnail path, extracting from the archive on first access.
+    /// Returns `None` if the mod has no thumbnail.
+    pub fn get_mod_thumbnail_path(
+        &self,
+        settings: &Settings,
+        mod_id: &str,
+    ) -> AppResult<Option<String>> {
+        self.with_index(settings, |storage_dir, index| {
+            let entry = index
+                .mods
+                .iter()
+                .find(|m| m.id == mod_id)
+                .ok_or_else(|| AppError::ModNotFound(mod_id.to_string()))?;
+
+            let metadata_dir = entry.metadata_dir(storage_dir);
+
+            // Check for already-cached thumbnail
+            for filename in ["thumbnail.webp", "thumbnail.png"] {
+                let cached = metadata_dir.join(filename);
+                if cached.exists() {
+                    return Ok(Some(cached.display().to_string()));
+                }
+            }
+
+            // Lazy migration: extract from archive and cache
+            let archive_path = entry.archive_path(storage_dir);
+            if !archive_path.exists() {
+                return Err(AppError::InvalidPath(archive_path.display().to_string()));
+            }
+
+            let cached_path = match entry.format {
+                ModArchiveFormat::Fantome => {
+                    extract_fantome_thumbnail(&archive_path, &metadata_dir)?
+                }
+                ModArchiveFormat::Modpkg => extract_modpkg_thumbnail(&archive_path, &metadata_dir)?,
+            };
+
+            Ok(cached_path.map(|p| p.display().to_string()))
+        })
+    }
+
+    pub fn get_enabled_mods_for_overlay(
+        &self,
+        settings: &Settings,
+    ) -> AppResult<(super::ProfileSlug, Vec<ltk_overlay::EnabledMod>)> {
+        self.with_index(settings, |storage_dir, index| {
+            let active_profile_id = index.active_profile_id.clone();
+            let active_profile = index
+                .profiles
+                .iter()
+                .find(|p| p.id == active_profile_id)
+                .ok_or_else(|| AppError::Other("Active profile not found".to_string()))?;
+
+            let mut enabled_mods = Vec::new();
+
+            // Process mods in the order they appear in enabled_mods list (maintains priority)
+            for mod_id in &active_profile.enabled_mods {
+                let Some(entry) = index.mods.iter().find(|m| &m.id == mod_id) else {
+                    tracing::warn!("Mod {} in profile but not found in library", mod_id);
+                    continue;
+                };
+
+                let archive_path = entry.archive_path(storage_dir);
+
+                if !archive_path.exists() {
+                    tracing::warn!(
+                        "Archive not found for mod {}: {}",
+                        entry.id,
+                        archive_path.display()
+                    );
+                    continue;
+                }
+
+                tracing::info!(
+                    "Creating content provider for mod {} from archive {}",
+                    entry.id,
+                    archive_path.display()
+                );
+
+                let content: Box<dyn ltk_overlay::ModContentProvider> = match entry.format {
+                    ModArchiveFormat::Fantome => {
+                        let file = std::fs::File::open(&archive_path)?;
+                        let provider = crate::overlay::fantome_content::FantomeContent::new(file)
+                            .map_err(|e| {
+                            AppError::Other(format!("Failed to open fantome archive: {}", e))
+                        })?;
+                        Box::new(provider)
+                    }
+                    ModArchiveFormat::Modpkg => {
+                        let file = std::fs::File::open(&archive_path)?;
+                        let modpkg = ltk_modpkg::Modpkg::mount_from_reader(file)
+                            .map_err(|e| AppError::Modpkg(e.to_string()))?;
+                        Box::new(crate::overlay::modpkg_content::ModpkgContent::new(modpkg))
+                    }
+                };
+
+                enabled_mods.push(ltk_overlay::EnabledMod {
+                    id: entry.id.clone(),
+                    content,
                 });
             }
-        }
+
+            Ok((active_profile.slug.clone(), enabled_mods))
+        })
     }
-
-    save_library_index(&storage_dir, &index)?;
-
-    if let Err(e) = crate::overlay::invalidate_overlay(app_handle, settings) {
-        tracing::warn!("Failed to invalidate overlay after bulk install: {}", e);
-    }
-
-    Ok(BulkInstallResult { installed, failed })
 }
 
 /// Core install logic for a single mod file.
@@ -200,7 +365,7 @@ fn install_single_mod_to_index(
     }
 
     let archives_dir = storage_dir.join("archives");
-    let metadata_dir = storage_dir.join("metadata");
+    let metadata_dir = storage_dir.join("mods");
     fs::create_dir_all(&archives_dir)?;
     fs::create_dir_all(&metadata_dir)?;
 
@@ -257,236 +422,6 @@ fn install_single_mod_to_index(
 
     let installed_mod = read_installed_mod(&entry, true, storage_dir)?;
     Ok((entry, installed_mod))
-}
-
-pub fn toggle_mod_enabled(
-    app_handle: &AppHandle,
-    settings: &Settings,
-    mod_id: &str,
-    enabled: bool,
-) -> AppResult<()> {
-    let storage_dir = resolve_storage_dir(app_handle, settings)?;
-    let mut index = load_library_index(&storage_dir)?;
-
-    // Validate mod exists
-    if !index.mods.iter().any(|m| m.id == mod_id) {
-        return Err(AppError::ModNotFound(mod_id.to_string()));
-    }
-
-    // Update active profile's enabled mods
-    let active_profile_id = index.active_profile_id.clone();
-    let profile = index
-        .profiles
-        .iter_mut()
-        .find(|p| p.id == active_profile_id)
-        .ok_or_else(|| AppError::Other("Active profile not found".to_string()))?;
-
-    if enabled {
-        if !profile.enabled_mods.contains(&mod_id.to_string()) {
-            // Insert at position preserving relative order from mod_order
-            let insert_pos =
-                if let Some(order_pos) = profile.mod_order.iter().position(|id| id == mod_id) {
-                    profile
-                        .enabled_mods
-                        .iter()
-                        .position(|id| {
-                            profile
-                                .mod_order
-                                .iter()
-                                .position(|oid| oid == id)
-                                .is_none_or(|p| p > order_pos)
-                        })
-                        .unwrap_or(profile.enabled_mods.len())
-                } else {
-                    0
-                };
-            profile.enabled_mods.insert(insert_pos, mod_id.to_string());
-        }
-    } else {
-        profile.enabled_mods.retain(|id| id != mod_id);
-    }
-
-    save_library_index(&storage_dir, &index)?;
-
-    if let Err(e) = crate::overlay::invalidate_overlay(app_handle, settings) {
-        tracing::warn!("Failed to invalidate overlay after toggling mod: {}", e);
-    }
-
-    Ok(())
-}
-
-pub fn uninstall_mod_by_id(
-    app_handle: &AppHandle,
-    settings: &Settings,
-    mod_id: &str,
-) -> AppResult<()> {
-    let storage_dir = resolve_storage_dir(app_handle, settings)?;
-    let mut index = load_library_index(&storage_dir)?;
-
-    let Some(pos) = index.mods.iter().position(|m| m.id == mod_id) else {
-        return Err(AppError::ModNotFound(mod_id.to_string()));
-    };
-
-    let entry = index.mods.remove(pos);
-
-    // Remove from all profiles' mod_order and enabled_mods
-    for profile in &mut index.profiles {
-        profile.mod_order.retain(|id| id != mod_id);
-        profile.enabled_mods.retain(|id| id != mod_id);
-    }
-
-    // Delete metadata directory
-    let metadata_dir = entry.metadata_dir(&storage_dir);
-    if metadata_dir.exists() {
-        fs::remove_dir_all(&metadata_dir)?;
-    }
-
-    // Delete archive file
-    let archive_path = entry.archive_path(&storage_dir);
-    if archive_path.exists() {
-        fs::remove_file(&archive_path)?;
-        tracing::info!("Deleted mod archive at {}", archive_path.display());
-    }
-
-    save_library_index(&storage_dir, &index)?;
-
-    if let Err(e) = crate::overlay::invalidate_overlay(app_handle, settings) {
-        tracing::warn!("Failed to invalidate overlay after uninstalling mod: {}", e);
-    }
-
-    Ok(())
-}
-
-/// Load a mod's thumbnail on-the-fly from its archive and return as a base64 data URL.
-/// Returns `None` if the mod has no thumbnail.
-pub fn get_mod_thumbnail_data(
-    app_handle: &AppHandle,
-    settings: &Settings,
-    mod_id: &str,
-) -> AppResult<Option<String>> {
-    use base64::Engine;
-
-    let storage_dir = resolve_storage_dir(app_handle, settings)?;
-    let index = load_library_index(&storage_dir)?;
-
-    let entry = index
-        .mods
-        .iter()
-        .find(|m| m.id == mod_id)
-        .ok_or_else(|| AppError::ModNotFound(mod_id.to_string()))?;
-
-    let archive_path = entry.archive_path(&storage_dir);
-    if !archive_path.exists() {
-        return Err(AppError::InvalidPath(archive_path.display().to_string()));
-    }
-
-    if entry.format == ModArchiveFormat::Fantome {
-        use std::io::Read;
-        use zip::ZipArchive;
-
-        let file = std::fs::File::open(&archive_path)?;
-        let mut archive = ZipArchive::new(file)
-            .map_err(|e| AppError::Other(format!("Failed to open fantome archive: {}", e)))?;
-
-        for i in 0..archive.len() {
-            let name = archive
-                .by_index(i)
-                .map_err(|e| AppError::Other(format!("Failed to read archive entry: {}", e)))?
-                .name()
-                .to_lowercase();
-
-            if name == "meta/image.png" {
-                let mut file = archive
-                    .by_index(i)
-                    .map_err(|e| AppError::Other(format!("Failed to read thumbnail: {}", e)))?;
-                let mut buffer = Vec::new();
-                file.read_to_end(&mut buffer)?;
-                let b64 = base64::engine::general_purpose::STANDARD.encode(&buffer);
-                return Ok(Some(format!("data:image/png;base64,{}", b64)));
-            }
-        }
-
-        Ok(None)
-    } else {
-        let file = std::fs::File::open(&archive_path)?;
-        let mut modpkg =
-            Modpkg::mount_from_reader(file).map_err(|e| AppError::Modpkg(e.to_string()))?;
-
-        match modpkg.load_thumbnail() {
-            Ok(thumbnail_bytes) => {
-                let b64 = base64::engine::general_purpose::STANDARD.encode(&thumbnail_bytes);
-                Ok(Some(format!("data:image/webp;base64,{}", b64)))
-            }
-            Err(_) => Ok(None),
-        }
-    }
-}
-
-pub(crate) fn get_enabled_mods_for_overlay(
-    app_handle: &AppHandle,
-    settings: &Settings,
-) -> AppResult<(super::ProfileSlug, Vec<ltk_overlay::EnabledMod>)> {
-    let storage_dir = resolve_storage_dir(app_handle, settings)?;
-    let index = load_library_index(&storage_dir)?;
-
-    // Get active profile
-    let active_profile_id = index.active_profile_id.clone();
-    let active_profile = index
-        .profiles
-        .iter()
-        .find(|p| p.id == active_profile_id)
-        .ok_or_else(|| AppError::Other("Active profile not found".to_string()))?;
-
-    let mut enabled_mods = Vec::new();
-
-    // Process mods in the order they appear in enabled_mods list (maintains priority)
-    for mod_id in &active_profile.enabled_mods {
-        let Some(entry) = index.mods.iter().find(|m| &m.id == mod_id) else {
-            tracing::warn!("Mod {} in profile but not found in library", mod_id);
-            continue;
-        };
-
-        let archive_path = entry.archive_path(&storage_dir);
-
-        if !archive_path.exists() {
-            tracing::warn!(
-                "Archive not found for mod {}: {}",
-                entry.id,
-                archive_path.display()
-            );
-            continue;
-        }
-
-        tracing::info!(
-            "Creating content provider for mod {} from archive {}",
-            entry.id,
-            archive_path.display()
-        );
-
-        let content: Box<dyn ltk_overlay::ModContentProvider> = match entry.format {
-            ModArchiveFormat::Fantome => {
-                let file = std::fs::File::open(&archive_path)?;
-                let provider =
-                    crate::overlay::fantome_content::FantomeContent::new(file).map_err(|e| {
-                        AppError::Other(format!("Failed to open fantome archive: {}", e))
-                    })?;
-                Box::new(provider)
-            }
-            ModArchiveFormat::Modpkg => {
-                let file = std::fs::File::open(&archive_path)?;
-                let modpkg = ltk_modpkg::Modpkg::mount_from_reader(file)
-                    .map_err(|e| AppError::Modpkg(e.to_string()))?;
-                Box::new(crate::overlay::modpkg_content::ModpkgContent::new(modpkg))
-            }
-        };
-
-        enabled_mods.push(ltk_overlay::EnabledMod {
-            id: entry.id.clone(),
-            content,
-        });
-    }
-
-    Ok((active_profile.slug.clone(), enabled_mods))
 }
 
 fn read_installed_mod(
@@ -624,17 +559,22 @@ fn extract_fantome_metadata(file_path: &Path, metadata_dir: &Path) -> AppResult<
     let config_path = metadata_dir.join("mod.config.json");
     fs::write(config_path, serde_json::to_string_pretty(&project)?)?;
 
-    // Extract README if present
+    // Extract README and thumbnail if present
     for i in 0..archive.len() {
         let mut file = archive
             .by_index(i)
             .map_err(|e| AppError::Other(format!("Failed to read archive entry: {}", e)))?;
         let name = file.name().to_string();
+        let name_lower = name.to_lowercase();
 
         if name.eq_ignore_ascii_case("META/readme.md") || name.eq_ignore_ascii_case("readme.md") {
             let mut contents = String::new();
             file.read_to_string(&mut contents)?;
             fs::write(metadata_dir.join("README.md"), contents)?;
+        } else if name_lower == "meta/image.png" {
+            let mut buffer = Vec::new();
+            file.read_to_end(&mut buffer)?;
+            let _ = fs::write(metadata_dir.join("thumbnail.png"), &buffer);
         }
     }
 
@@ -694,12 +634,71 @@ fn extract_modpkg_metadata(file_path: &Path, metadata_dir: &Path) -> AppResult<(
     let config_path = metadata_dir.join("mod.config.json");
     fs::write(config_path, serde_json::to_string_pretty(&project)?)?;
 
-    // Optional meta: README only (thumbnails loaded on-the-fly from archive)
     if let Ok(readme_bytes) = modpkg.load_readme() {
         let _ = fs::write(metadata_dir.join("README.md"), readme_bytes);
+    }
+
+    if let Ok(thumbnail_bytes) = modpkg.load_thumbnail() {
+        let _ = fs::write(metadata_dir.join("thumbnail.webp"), thumbnail_bytes);
     }
 
     tracing::info!("Extracted modpkg metadata to {}", metadata_dir.display());
 
     Ok(())
+}
+
+/// Extract thumbnail from a fantome archive and save to the metadata directory.
+/// Returns the path to the saved file, or `None` if the archive has no thumbnail.
+fn extract_fantome_thumbnail(
+    archive_path: &Path,
+    metadata_dir: &Path,
+) -> AppResult<Option<PathBuf>> {
+    use std::io::Read;
+    use zip::ZipArchive;
+
+    let file = std::fs::File::open(archive_path)?;
+    let mut archive = ZipArchive::new(file)
+        .map_err(|e| AppError::Other(format!("Failed to open fantome archive: {}", e)))?;
+
+    for i in 0..archive.len() {
+        let name = archive
+            .by_index(i)
+            .map_err(|e| AppError::Other(format!("Failed to read archive entry: {}", e)))?
+            .name()
+            .to_lowercase();
+
+        if name == "meta/image.png" {
+            let mut file = archive
+                .by_index(i)
+                .map_err(|e| AppError::Other(format!("Failed to read thumbnail: {}", e)))?;
+            let mut buffer = Vec::new();
+            file.read_to_end(&mut buffer)?;
+
+            let dest = metadata_dir.join("thumbnail.png");
+            fs::write(&dest, &buffer)?;
+            return Ok(Some(dest));
+        }
+    }
+
+    Ok(None)
+}
+
+/// Extract thumbnail from a modpkg archive and save to the metadata directory.
+/// Returns the path to the saved file, or `None` if the archive has no thumbnail.
+fn extract_modpkg_thumbnail(
+    archive_path: &Path,
+    metadata_dir: &Path,
+) -> AppResult<Option<PathBuf>> {
+    let file = std::fs::File::open(archive_path)?;
+    let mut modpkg =
+        Modpkg::mount_from_reader(file).map_err(|e| AppError::Modpkg(e.to_string()))?;
+
+    match modpkg.load_thumbnail() {
+        Ok(thumbnail_bytes) => {
+            let dest = metadata_dir.join("thumbnail.webp");
+            fs::write(&dest, &thumbnail_bytes)?;
+            Ok(Some(dest))
+        }
+        Err(_) => Ok(None),
+    }
 }

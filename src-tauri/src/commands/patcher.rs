@@ -3,6 +3,7 @@ use crate::legacy_patcher::api::PATCHER_DLL_NAME;
 use crate::legacy_patcher::runner::{
     run_legacy_patcher_loop, LegacyPatcherLoopError, DEFAULT_HOOK_TIMEOUT_MS,
 };
+use crate::mods::ModLibraryState;
 use crate::overlay;
 use crate::patcher::{PatcherPhase, PatcherState};
 use crate::state::SettingsState;
@@ -105,8 +106,9 @@ pub fn start_patcher(
     app_handle: AppHandle,
     state: State<PatcherState>,
     settings: State<SettingsState>,
+    library: State<ModLibraryState>,
 ) -> IpcResult<()> {
-    let result = start_patcher_inner(config, &app_handle, &state, &settings);
+    let result = start_patcher_inner(config, &app_handle, &state, &settings, &library);
     if let Err(ref e) = result {
         tracing::error!(error = ?e, "Start patcher failed");
     }
@@ -118,6 +120,7 @@ fn start_patcher_inner(
     app_handle: &AppHandle,
     state: &State<PatcherState>,
     settings: &State<SettingsState>,
+    library: &State<ModLibraryState>,
 ) -> AppResult<()> {
     // Lock briefly: check state, set phase, clone what we need for the thread
     let (stop_flag, state_arc) = {
@@ -158,16 +161,18 @@ fn start_patcher_inner(
             .unwrap_or_else(|| "<unset>".to_string())
     );
 
-    let app_handle_clone = app_handle.clone();
+    let library_clone = library.0.clone();
 
     let handle = thread::spawn(move || {
         // Phase 1: Build overlay (the slow part)
-        let overlay_root = match overlay::ensure_overlay(&app_handle_clone, &settings_snapshot) {
+        let overlay_root = match overlay::ensure_overlay(&library_clone, &settings_snapshot) {
             Ok(root) => root,
             Err(e) => {
                 tracing::error!(error = ?e, "Overlay build failed");
                 let error_response: AppErrorResponse = e.into();
-                let _ = app_handle_clone.emit("patcher-error", &error_response);
+                let _ = library_clone
+                    .app_handle()
+                    .emit("patcher-error", &error_response);
                 if let Ok(mut s) = state_arc.lock() {
                     s.phase = PatcherPhase::Idle;
                 }

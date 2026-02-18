@@ -1,95 +1,70 @@
 use crate::error::{AppError, AppResult, IpcResult, MutexResultExt};
 use crate::mods::{
-    inspect_modpkg_file, install_mod_from_package, install_mods_from_packages,
-    reorder_mods as reorder_mods_inner_fn, toggle_mod_enabled, uninstall_mod_by_id,
-    BulkInstallResult, InstalledMod, ModpkgInfo,
+    inspect_modpkg_file, BulkInstallResult, InstalledMod, ModLibraryState, ModpkgInfo,
 };
 use crate::patcher::PatcherState;
 use crate::state::SettingsState;
-use tauri::{AppHandle, State};
+use tauri::State;
 
 /// Get all installed mods from the mod library.
 #[tauri::command]
 pub fn get_installed_mods(
-    app_handle: AppHandle,
+    library: State<ModLibraryState>,
     settings: State<SettingsState>,
 ) -> IpcResult<Vec<InstalledMod>> {
-    get_installed_mods_inner(&app_handle, &settings).into()
-}
-
-fn get_installed_mods_inner(
-    app_handle: &AppHandle,
-    settings: &State<SettingsState>,
-) -> AppResult<Vec<InstalledMod>> {
-    let settings = settings.0.lock().mutex_err()?.clone();
-
-    crate::mods::get_installed_mods(app_handle, &settings)
+    let result: AppResult<Vec<InstalledMod>> = (|| {
+        let settings = settings.0.lock().mutex_err()?.clone();
+        library.0.get_installed_mods(&settings)
+    })();
+    result.into()
 }
 
 /// Install a mod from a `.modpkg` or `.fantome` file into `modStoragePath`.
 #[tauri::command]
 pub fn install_mod(
     file_path: String,
-    app_handle: AppHandle,
+    library: State<ModLibraryState>,
     settings: State<SettingsState>,
     patcher: State<PatcherState>,
 ) -> IpcResult<InstalledMod> {
-    install_mod_inner(file_path, &app_handle, &settings, &patcher).into()
-}
-
-fn install_mod_inner(
-    file_path: String,
-    app_handle: &AppHandle,
-    settings: &State<SettingsState>,
-    patcher: &State<PatcherState>,
-) -> AppResult<InstalledMod> {
-    reject_if_patcher_running(patcher)?;
-    let settings = settings.0.lock().mutex_err()?.clone();
-    install_mod_from_package(app_handle, &settings, &file_path)
+    let result: AppResult<InstalledMod> = (|| {
+        reject_if_patcher_running(&patcher)?;
+        let settings = settings.0.lock().mutex_err()?.clone();
+        library.0.install_mod_from_package(&settings, &file_path)
+    })();
+    result.into()
 }
 
 /// Install multiple mods from `.modpkg` or `.fantome` files in a single batch.
 #[tauri::command]
 pub fn install_mods(
     file_paths: Vec<String>,
-    app_handle: AppHandle,
+    library: State<ModLibraryState>,
     settings: State<SettingsState>,
     patcher: State<PatcherState>,
 ) -> IpcResult<BulkInstallResult> {
-    install_mods_inner(file_paths, &app_handle, &settings, &patcher).into()
-}
-
-fn install_mods_inner(
-    file_paths: Vec<String>,
-    app_handle: &AppHandle,
-    settings: &State<SettingsState>,
-    patcher: &State<PatcherState>,
-) -> AppResult<BulkInstallResult> {
-    reject_if_patcher_running(patcher)?;
-    let settings = settings.0.lock().mutex_err()?.clone();
-    install_mods_from_packages(app_handle, &settings, &file_paths)
+    let result: AppResult<BulkInstallResult> = (|| {
+        reject_if_patcher_running(&patcher)?;
+        let settings = settings.0.lock().mutex_err()?.clone();
+        library.0.install_mods_from_packages(&settings, &file_paths)
+    })();
+    result.into()
 }
 
 /// Uninstall a mod by id.
 #[tauri::command]
 pub fn uninstall_mod(
     mod_id: String,
-    app_handle: AppHandle,
+    library: State<ModLibraryState>,
     settings: State<SettingsState>,
     patcher: State<PatcherState>,
 ) -> IpcResult<()> {
-    uninstall_mod_inner(mod_id, &app_handle, &settings, &patcher).into()
-}
-
-fn uninstall_mod_inner(
-    mod_id: String,
-    app_handle: &AppHandle,
-    settings: &State<SettingsState>,
-    patcher: &State<PatcherState>,
-) -> AppResult<()> {
-    reject_if_patcher_running(patcher)?;
-    let settings = settings.0.lock().mutex_err()?.clone();
-    uninstall_mod_by_id(app_handle, &settings, &mod_id)
+    let result: AppResult<()> = (|| {
+        reject_if_patcher_running(&patcher)?;
+        let settings = settings.0.lock().mutex_err()?.clone();
+        library.0.uninstall_mod_by_id(&settings, &mod_id)
+    })();
+    result.into()
 }
 
 /// Toggle a mod's enabled state.
@@ -97,45 +72,32 @@ fn uninstall_mod_inner(
 pub fn toggle_mod(
     mod_id: String,
     enabled: bool,
-    app_handle: AppHandle,
+    library: State<ModLibraryState>,
     settings: State<SettingsState>,
     patcher: State<PatcherState>,
 ) -> IpcResult<()> {
-    toggle_mod_inner(mod_id, enabled, &app_handle, &settings, &patcher).into()
-}
-
-fn toggle_mod_inner(
-    mod_id: String,
-    enabled: bool,
-    app_handle: &AppHandle,
-    settings: &State<SettingsState>,
-    patcher: &State<PatcherState>,
-) -> AppResult<()> {
-    reject_if_patcher_running(patcher)?;
-    let settings = settings.0.lock().mutex_err()?.clone();
-    toggle_mod_enabled(app_handle, &settings, &mod_id, enabled)
+    let result: AppResult<()> = (|| {
+        reject_if_patcher_running(&patcher)?;
+        let settings = settings.0.lock().mutex_err()?.clone();
+        library.0.toggle_mod_enabled(&settings, &mod_id, enabled)
+    })();
+    result.into()
 }
 
 /// Reorder the enabled mods in the active profile.
 #[tauri::command]
 pub fn reorder_mods(
     mod_ids: Vec<String>,
-    app_handle: AppHandle,
+    library: State<ModLibraryState>,
     settings: State<SettingsState>,
     patcher: State<PatcherState>,
 ) -> IpcResult<()> {
-    reorder_mods_command_inner(mod_ids, &app_handle, &settings, &patcher).into()
-}
-
-fn reorder_mods_command_inner(
-    mod_ids: Vec<String>,
-    app_handle: &AppHandle,
-    settings: &State<SettingsState>,
-    patcher: &State<PatcherState>,
-) -> AppResult<()> {
-    reject_if_patcher_running(patcher)?;
-    let settings = settings.0.lock().mutex_err()?.clone();
-    reorder_mods_inner_fn(app_handle, &settings, mod_ids)
+    let result: AppResult<()> = (|| {
+        reject_if_patcher_running(&patcher)?;
+        let settings = settings.0.lock().mutex_err()?.clone();
+        library.0.reorder_mods(&settings, mod_ids)
+    })();
+    result.into()
 }
 
 /// Inspect a `.modpkg` file and return its metadata.
@@ -144,42 +106,33 @@ pub fn inspect_modpkg(file_path: String) -> IpcResult<ModpkgInfo> {
     inspect_modpkg_file(&file_path).into()
 }
 
-/// Get a mod's thumbnail as a base64 data URL, loaded on-the-fly from the archive.
+/// Get a mod's cached thumbnail path, extracting from the archive on first access.
 /// Returns `null` if the mod has no thumbnail.
 #[tauri::command]
 pub fn get_mod_thumbnail(
     mod_id: String,
-    app_handle: AppHandle,
+    library: State<ModLibraryState>,
     settings: State<SettingsState>,
 ) -> IpcResult<Option<String>> {
-    get_mod_thumbnail_inner(&mod_id, &app_handle, &settings).into()
-}
-
-fn get_mod_thumbnail_inner(
-    mod_id: &str,
-    app_handle: &AppHandle,
-    settings: &State<SettingsState>,
-) -> AppResult<Option<String>> {
-    let settings = settings.0.lock().mutex_err()?.clone();
-    crate::mods::get_mod_thumbnail_data(app_handle, &settings, mod_id)
+    let result: AppResult<Option<String>> = (|| {
+        let settings = settings.0.lock().mutex_err()?.clone();
+        library.0.get_mod_thumbnail_path(&settings, &mod_id)
+    })();
+    result.into()
 }
 
 /// Get the mod storage directory path.
 #[tauri::command]
 pub fn get_storage_directory(
-    app_handle: AppHandle,
+    library: State<ModLibraryState>,
     settings: State<SettingsState>,
 ) -> IpcResult<String> {
-    get_storage_directory_inner(&app_handle, &settings).into()
-}
-
-fn get_storage_directory_inner(
-    app_handle: &AppHandle,
-    settings: &State<SettingsState>,
-) -> AppResult<String> {
-    let settings = settings.0.lock().mutex_err()?.clone();
-    let storage_dir = crate::mods::resolve_storage_dir(app_handle, &settings)?;
-    Ok(storage_dir.display().to_string())
+    let result: AppResult<String> = (|| {
+        let settings = settings.0.lock().mutex_err()?.clone();
+        let storage_dir = library.0.storage_dir(&settings)?;
+        Ok(storage_dir.display().to_string())
+    })();
+    result.into()
 }
 
 /// Reject the operation if the patcher is currently running.

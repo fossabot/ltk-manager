@@ -3,15 +3,6 @@ mod library;
 mod profiles;
 
 pub use inspect::{inspect_modpkg_file, ModpkgInfo};
-pub(crate) use library::get_enabled_mods_for_overlay;
-pub use library::{
-    get_installed_mods, get_mod_thumbnail_data, install_mod_from_package,
-    install_mods_from_packages, reorder_mods, toggle_mod_enabled, uninstall_mod_by_id,
-};
-pub use profiles::{
-    create_profile, delete_profile, get_active_profile_info, get_profiles, rename_profile,
-    switch_profile,
-};
 
 use crate::error::{AppError, AppResult};
 use crate::state::{get_app_data_dir, Settings};
@@ -21,6 +12,83 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::AppHandle;
 use uuid::Uuid;
+
+/// Managed struct that encapsulates mod library operations.
+///
+/// Holds only the `AppHandle` (constant for app lifetime).
+/// Settings are passed per-call since they can change at runtime.
+#[derive(Clone)]
+pub struct ModLibrary {
+    app_handle: AppHandle,
+}
+
+/// Tauri managed state wrapper for `ModLibrary`.
+pub struct ModLibraryState(pub ModLibrary);
+
+impl ModLibrary {
+    pub fn new(app_handle: &AppHandle) -> Self {
+        Self {
+            app_handle: app_handle.clone(),
+        }
+    }
+
+    /// Expose the inner AppHandle (needed by overlay module for emitting events).
+    pub fn app_handle(&self) -> &AppHandle {
+        &self.app_handle
+    }
+
+    /// Resolve storage directory from settings snapshot.
+    pub(crate) fn storage_dir(&self, settings: &Settings) -> AppResult<PathBuf> {
+        settings
+            .mod_storage_path
+            .clone()
+            .or_else(|| get_app_data_dir(&self.app_handle))
+            .ok_or_else(|| AppError::Other("Failed to resolve mod storage directory".to_string()))
+    }
+
+    /// Read-only index access: load index, run closure.
+    fn with_index<T>(
+        &self,
+        settings: &Settings,
+        f: impl FnOnce(&Path, &LibraryIndex) -> AppResult<T>,
+    ) -> AppResult<T> {
+        let storage_dir = self.storage_dir(settings)?;
+        let index = load_library_index(&storage_dir)?;
+        f(&storage_dir, &index)
+    }
+
+    /// Mutate index: load, run closure, save, invalidate overlay.
+    fn mutate_index<T>(
+        &self,
+        settings: &Settings,
+        f: impl FnOnce(&Path, &mut LibraryIndex) -> AppResult<T>,
+    ) -> AppResult<T> {
+        let storage_dir = self.storage_dir(settings)?;
+        let mut index = load_library_index(&storage_dir)?;
+        let result = f(&storage_dir, &mut index)?;
+        save_library_index(&storage_dir, &index)?;
+        if let Err(e) = self.invalidate_overlay(settings) {
+            tracing::warn!("Failed to invalidate overlay: {}", e);
+        }
+        Ok(result)
+    }
+
+    /// Delete the active profile's `overlay.json` to force the next build to rebuild.
+    fn invalidate_overlay(&self, settings: &Settings) -> AppResult<()> {
+        let storage_dir = self.storage_dir(settings)?;
+        let index = load_library_index(&storage_dir)?;
+        let active_profile = get_active_profile(&index)?;
+        let overlay_json = storage_dir
+            .join("profiles")
+            .join(active_profile.slug.as_str())
+            .join("overlay.json");
+        if overlay_json.exists() {
+            std::fs::remove_file(&overlay_json)?;
+            tracing::info!("Invalidated overlay for profile {}", active_profile.slug);
+        }
+        Ok(())
+    }
+}
 
 /// Slugified profile name used as the filesystem directory name.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -193,7 +261,7 @@ pub(super) struct LibraryModEntry {
 impl LibraryModEntry {
     /// Directory containing extracted metadata (mod.config.json, thumbnail, etc).
     pub(super) fn metadata_dir(&self, storage_dir: &Path) -> PathBuf {
-        storage_dir.join("metadata").join(&self.id)
+        storage_dir.join("mods").join(&self.id)
     }
 
     /// Path to the stored mod archive file.
@@ -204,24 +272,13 @@ impl LibraryModEntry {
     }
 }
 
-pub(crate) fn resolve_storage_dir(
-    app_handle: &AppHandle,
-    settings: &Settings,
-) -> AppResult<PathBuf> {
-    settings
-        .mod_storage_path
-        .clone()
-        .or_else(|| get_app_data_dir(app_handle))
-        .ok_or_else(|| AppError::Other("Failed to resolve mod storage directory".to_string()))
-}
-
 pub(super) fn library_index_path(storage_dir: &Path) -> PathBuf {
     storage_dir.join("library.json")
 }
 
 /// Load the library index from disk.
 /// Creates the index file if it doesn't exist.
-pub(crate) fn load_library_index(storage_dir: &Path) -> AppResult<LibraryIndex> {
+pub(super) fn load_library_index(storage_dir: &Path) -> AppResult<LibraryIndex> {
     fs::create_dir_all(storage_dir)?;
 
     let path = library_index_path(storage_dir);
@@ -240,7 +297,7 @@ pub(super) fn save_library_index(storage_dir: &Path, index: &LibraryIndex) -> Ap
     Ok(())
 }
 
-pub(crate) fn get_active_profile(index: &LibraryIndex) -> AppResult<&Profile> {
+pub(super) fn get_active_profile(index: &LibraryIndex) -> AppResult<&Profile> {
     index
         .profiles
         .iter()

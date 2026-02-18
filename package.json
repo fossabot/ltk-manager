@@ -23,6 +23,9 @@
     ],
     "*.{js,json,css,html,md}": [
       "prettier --write"
+    ],
+    "*.rs": [
+      "cargo fmt --manifest-path src-tauri/Cargo.toml --"
     ]
   },
   "dependencies": {
