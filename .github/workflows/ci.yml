@@ -36,9 +36,7 @@ jobs:
       - run: pnpm install --frozen-lockfile && pnpm build
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-        with: { workspaces: src-tauri }
       - run: cargo check --all-targets --all-features
-        working-directory: src-tauri
 
   test:
     name: Test
@@ -55,9 +53,7 @@ jobs:
       - run: pnpm install --frozen-lockfile && pnpm build
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-        with: { workspaces: src-tauri }
       - run: cargo test --all-features
-        working-directory: src-tauri
 
   clippy:
     name: Clippy
@@ -75,9 +71,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with: { components: clippy }
       - uses: Swatinem/rust-cache@v2
-        with: { workspaces: src-tauri }
       - run: cargo clippy --all-targets --all-features -- -D warnings
-        working-directory: src-tauri
 
   fmt:
     name: Format
@@ -87,4 +81,3 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with: { components: rustfmt }
       - run: cargo fmt --all -- --check
-        working-directory: src-tauri

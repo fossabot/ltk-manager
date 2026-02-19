@@ -33,7 +33,6 @@ jobs:
         uses: release-plz/action@v0.5
         with:
           command: release-pr
-          manifest_path: src-tauri/Cargo.toml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -54,7 +53,6 @@ jobs:
         uses: release-plz/action@v0.5
         with:
           command: release
-          manifest_path: src-tauri/Cargo.toml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -79,7 +77,6 @@ jobs:
         with: { targets: x86_64-pc-windows-msvc }
 
       - uses: Swatinem/rust-cache@v2
-        with: { workspaces: src-tauri }
 
       - run: pnpm install --frozen-lockfile
 
@@ -138,7 +135,7 @@ jobs:
         run: |
           $version = "${{ steps.release_info.outputs.version }}"
           $tag = "${{ steps.release_info.outputs.tag }}"
-          $bundlePath = "src-tauri/target/release/bundle"
+          $bundlePath = "target/release/bundle"
 
           # v2 updater artifacts: .exe + .exe.sig (not .nsis.zip)
           $nsisExe = Get-ChildItem "$bundlePath/nsis/*.exe" | Select-Object -First 1
@@ -169,8 +166,8 @@ jobs:
         with:
           tag_name: ${{ steps.release_info.outputs.tag }}
           files: |
-            src-tauri/target/release/bundle/nsis/*.exe
-            src-tauri/target/release/bundle/nsis/*.exe.sig
+            target/release/bundle/nsis/*.exe
+            target/release/bundle/nsis/*.exe.sig
             latest.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -181,8 +178,8 @@ jobs:
         with:
           tag_name: ${{ steps.release_info.outputs.tag }}
           files: |
-            src-tauri/target/release/bundle/msi/*.msi
-            src-tauri/target/release/bundle/msi/*.msi.sig
+            target/release/bundle/msi/*.msi
+            target/release/bundle/msi/*.msi.sig
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
