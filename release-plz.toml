@@ -15,6 +15,7 @@ publish_no_verify = true
 git_only = true
 semver_check = false
 changelog_update = true
+cargo_package_extra_args = ["--no-verify"]
 
 [changelog]
 header = """
