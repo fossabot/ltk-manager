@@ -17,10 +17,12 @@ mod overlay;
 pub mod patcher;
 mod state;
 mod utils;
+mod workshop;
 
 use mods::{ModLibrary, ModLibraryState};
 use patcher::PatcherState;
 use state::SettingsState;
+use workshop::{Workshop, WorkshopState};
 
 /// Perform first-run initialization:
 /// - If league_path is not set, attempt auto-detection
@@ -96,6 +98,7 @@ fn main() {
             let settings_state = SettingsState::new(app_handle);
             let patcher_state = PatcherState::new();
             let mod_library = ModLibraryState(ModLibrary::new(app_handle));
+            let workshop = WorkshopState(Workshop::new(app_handle));
 
             // Run first-run initialization (auto-detect League path)
             initialize_first_run(app_handle, &settings_state);
@@ -104,6 +107,7 @@ fn main() {
             app.manage(settings_state);
             app.manage(patcher_state);
             app.manage(mod_library);
+            app.manage(workshop);
 
             Ok(())
         })

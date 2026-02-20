@@ -2321,6 +2321,7 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "uuid",
+ "webp",
  "xxhash-rust",
  "zip 2.4.2",
  "zstd",

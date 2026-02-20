@@ -46,6 +46,7 @@ zstd = { version = "0.13", default-features = false }
 
 zip = "2.2.0"
 image = "0.25.2"
+webp = "0.3"
 slug = "0.1"
 
 tracing = "0.1"

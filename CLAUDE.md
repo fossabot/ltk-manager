@@ -40,6 +40,8 @@ RUST_LOG=ltk_manager=trace,tauri=info pnpm tauri dev
 
 From `.cursorrules`: avoid trivially descriptive comments. Only comment non-obvious business logic, workarounds, edge cases, or "why" decisions. Document all public Rust APIs with `///` doc comments.
 
+**No redundant comments.** Do not add inline comments that restate what the code already expresses. If the code is descriptive enough (clear variable names, well-known patterns like temp-file-then-rename, obvious API calls), leave it uncommented. This applies to AI-generated code and suggestions too — strip narration comments before committing.
+
 ### JSX Conditional Rendering
 
 **Avoid ternary operators in JSX.** Use early returns or `{condition && <Component />}` instead.

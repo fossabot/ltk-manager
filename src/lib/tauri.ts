@@ -152,6 +152,14 @@ export interface CreateProjectArgs {
   authors: string[];
 }
 
+export interface SaveProjectConfigArgs {
+  projectPath: string;
+  displayName: string;
+  version: string;
+  description: string;
+  authors: WorkshopAuthor[];
+}
+
 export interface PackProjectArgs {
   projectPath: string;
   outputDir?: string;
@@ -244,20 +252,8 @@ export const api = {
     invokeResult<WorkshopProject>("create_workshop_project", { args }),
   getWorkshopProject: (projectPath: string) =>
     invokeResult<WorkshopProject>("get_workshop_project", { projectPath }),
-  saveProjectConfig: (
-    projectPath: string,
-    displayName: string,
-    version: string,
-    description: string,
-    authors: WorkshopAuthor[],
-  ) =>
-    invokeResult<WorkshopProject>("save_project_config", {
-      projectPath,
-      displayName,
-      version,
-      description,
-      authors,
-    }),
+  saveProjectConfig: (args: SaveProjectConfigArgs) =>
+    invokeResult<WorkshopProject>("save_project_config", { args }),
   renameWorkshopProject: (projectPath: string, newName: string) =>
     invokeResult<WorkshopProject>("rename_workshop_project", { projectPath, newName }),
   deleteWorkshopProject: (projectPath: string) =>
