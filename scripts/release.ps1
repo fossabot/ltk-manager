@@ -28,8 +28,8 @@ if ($branch -ne "main") {
 }
 
 # Ensure tag doesn't already exist
-git rev-parse $Tag 2>$null
-if ($LASTEXITCODE -eq 0) {
+$tagExists = git tag -l $Tag
+if ($tagExists) {
     Write-Error "Tag $Tag already exists."
     exit 1
 }
