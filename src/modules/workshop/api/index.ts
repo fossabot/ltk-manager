@@ -3,6 +3,7 @@ export { useCreateProject } from "./useCreateProject";
 export { useDeleteProject } from "./useDeleteProject";
 export { useImportFromModpkg } from "./useImportFromModpkg";
 export { usePackProject } from "./usePackProject";
+export { useProjectActions } from "./useProjectActions";
 export { projectThumbnailOptions, useProjectThumbnail } from "./useProjectThumbnail";
 export { useRenameProject } from "./useRenameProject";
 export { useSaveProjectConfig } from "./useSaveProjectConfig";
