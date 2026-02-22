@@ -17,6 +17,7 @@ export interface MultiSelectProps {
   placeholder?: string;
   disabled?: boolean;
   className?: string;
+  variant?: "compact" | "field";
 }
 
 export function MultiSelect({
@@ -27,6 +28,7 @@ export function MultiSelect({
   placeholder,
   disabled,
   className,
+  variant = "compact",
 }: MultiSelectProps) {
   const filter = BaseCombobox.useFilter();
 
@@ -54,24 +56,53 @@ export function MultiSelect({
       itemToStringValue={(item) => item.value}
       disabled={disabled}
     >
-      <BaseCombobox.Trigger
-        className={twMerge(
-          "inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm transition-colors",
-          "border-surface-500 bg-surface-700 text-surface-200",
-          "hover:border-surface-400",
-          "focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none",
-          "disabled:cursor-not-allowed disabled:opacity-50",
-          className,
-        )}
-      >
-        {label && <span className="text-surface-300">{label}</span>}
-        {selected.size > 0 && (
-          <span className="rounded-full bg-brand-500/20 px-1.5 text-xs text-brand-400">
-            {selected.size}
+      {variant === "compact" ? (
+        <BaseCombobox.Trigger
+          className={twMerge(
+            "inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm transition-colors",
+            "border-surface-500 bg-surface-700 text-surface-200",
+            "hover:border-surface-400",
+            "focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none",
+            "disabled:cursor-not-allowed disabled:opacity-50",
+            className,
+          )}
+        >
+          {label && <span className="text-surface-300">{label}</span>}
+          {selected.size > 0 && (
+            <span className="rounded-full bg-brand-500/20 px-1.5 text-xs text-brand-400">
+              {selected.size}
+            </span>
+          )}
+          <LuChevronDown className="h-3.5 w-3.5 text-surface-400" />
+        </BaseCombobox.Trigger>
+      ) : (
+        <BaseCombobox.Trigger
+          className={twMerge(
+            "flex min-h-[42px] w-full items-center gap-1.5 rounded-lg border px-3 py-2 text-sm transition-colors",
+            "border-surface-500 bg-surface-700 text-surface-200",
+            "hover:border-surface-400",
+            "focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:outline-none",
+            "disabled:cursor-not-allowed disabled:opacity-50",
+            className,
+          )}
+        >
+          <span className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+            {selectedOptions.length > 0 ? (
+              selectedOptions.map((o) => (
+                <span
+                  key={o.value}
+                  className="inline-flex items-center rounded bg-surface-600 px-1.5 py-0.5 text-xs text-surface-200"
+                >
+                  {o.label}
+                </span>
+              ))
+            ) : (
+              <span className="text-surface-400">{label ?? "Select..."}</span>
+            )}
           </span>
-        )}
-        <LuChevronDown className="h-3.5 w-3.5 text-surface-400" />
-      </BaseCombobox.Trigger>
+          <LuChevronDown className="h-3.5 w-3.5 shrink-0 text-surface-400" />
+        </BaseCombobox.Trigger>
+      )}
       <BaseCombobox.Portal>
         <BaseCombobox.Positioner side="bottom" sideOffset={4} className="z-50">
           <BaseCombobox.Popup
