@@ -48,10 +48,20 @@ SelectTrigger.displayName = "Select.Trigger";
 export interface SelectValueProps extends Omit<BaseSelect.Value.Props, "className" | "children"> {
   className?: string;
   placeholder?: string;
+  prefix?: string;
   children?: BaseSelect.Value.Props["children"];
 }
 
-export const SelectValue = ({ className, children, ...props }: SelectValueProps) => {
+export const SelectValue = ({ className, prefix, children, ...props }: SelectValueProps) => {
+  if (prefix) {
+    return (
+      <span className={className}>
+        <span className="text-surface-400">{prefix} </span>
+        <BaseSelect.Value {...props}>{children}</BaseSelect.Value>
+      </span>
+    );
+  }
+
   return (
     <BaseSelect.Value className={className} {...props}>
       {children}
