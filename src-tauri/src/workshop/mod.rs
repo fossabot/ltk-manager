@@ -17,7 +17,6 @@ use tauri::AppHandle;
 /// Holds the `AppHandle` for consistency with `ModLibrary`.
 /// Settings are passed per-call since they can change at runtime.
 pub struct Workshop {
-    #[allow(dead_code)]
     app_handle: AppHandle,
 }
 
@@ -85,6 +84,53 @@ pub struct WorkshopLayer {
     pub description: Option<String>,
     #[serde(default)]
     pub string_overrides: HashMap<String, HashMap<String, String>>,
+}
+
+/// Metadata peeked from a .fantome archive without extracting content.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FantomePeekResult {
+    pub name: String,
+    pub author: String,
+    pub version: String,
+    pub description: String,
+    pub wad_files: Vec<String>,
+    pub suggested_name: String,
+}
+
+/// Arguments for importing a .fantome archive.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportFantomeArgs {
+    pub file_path: String,
+    pub name: String,
+    pub display_name: String,
+}
+
+/// Progress event emitted during fantome import.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FantomeImportProgress {
+    pub stage: String,
+    pub current_wad: Option<String>,
+    pub current: u32,
+    pub total: u32,
+}
+
+/// Arguments for importing a project from a GitHub repository.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportGitRepoArgs {
+    pub url: String,
+    pub branch: Option<String>,
+}
+
+/// Progress event emitted during git repo import.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitImportProgress {
+    pub stage: String,
+    pub message: Option<String>,
 }
 
 /// Arguments for creating a new project.

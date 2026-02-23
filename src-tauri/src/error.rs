@@ -34,6 +34,8 @@ pub enum ErrorCode {
     ProjectAlreadyExists,
     /// Failed to pack workshop project
     PackFailed,
+    /// Error processing a .fantome file
+    Fantome,
     /// WAD file error
     Wad,
     /// Operation blocked because the patcher is running
@@ -184,6 +186,9 @@ pub enum AppError {
     #[error("Failed to pack project: {0}")]
     PackFailed(String),
 
+    #[error("Fantome error: {0}")]
+    Fantome(String),
+
     #[error("WAD error: {0}")]
     WadError(#[from] ltk_wad::WadError),
 
@@ -252,6 +257,8 @@ impl From<AppError> for AppErrorResponse {
             .with_context(serde_json::json!({ "projectName": name })),
 
             AppError::PackFailed(msg) => AppErrorResponse::new(ErrorCode::PackFailed, msg),
+
+            AppError::Fantome(msg) => AppErrorResponse::new(ErrorCode::Fantome, msg),
 
             AppError::WadError(e) => AppErrorResponse::new(ErrorCode::Wad, e.to_string()),
 
