@@ -117,6 +117,22 @@ pub struct FantomeImportProgress {
     pub total: u32,
 }
 
+/// Arguments for importing a project from a GitHub repository.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportGitRepoArgs {
+    pub url: String,
+    pub branch: Option<String>,
+}
+
+/// Progress event emitted during git repo import.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitImportProgress {
+    pub stage: String,
+    pub message: Option<String>,
+}
+
 /// Arguments for creating a new project.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]

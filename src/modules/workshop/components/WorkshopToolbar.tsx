@@ -2,6 +2,7 @@ import {
   LuChevronDown,
   LuDownload,
   LuFileArchive,
+  LuGitBranch,
   LuGrid3X3,
   LuList,
   LuPackage,
@@ -20,6 +21,7 @@ interface WorkshopToolbarProps {
   onViewModeChange: (mode: ViewMode) => void;
   onImportModpkg: () => void;
   onImportFantome: () => void;
+  onImportGitRepo: () => void;
   onNewProject: () => void;
   isImporting?: boolean;
 }
@@ -31,6 +33,7 @@ export function WorkshopToolbar({
   onViewModeChange,
   onImportModpkg,
   onImportFantome,
+  onImportGitRepo,
   onNewProject,
   isImporting,
 }: WorkshopToolbarProps) {
@@ -90,6 +93,9 @@ export function WorkshopToolbar({
               </Menu.Item>
               <Menu.Item icon={<LuPackage className="h-4 w-4" />} onClick={onImportModpkg}>
                 From Modpkg
+              </Menu.Item>
+              <Menu.Item icon={<LuGitBranch className="h-4 w-4" />} onClick={onImportGitRepo}>
+                From Git Repository
               </Menu.Item>
             </Menu.Popup>
           </Menu.Positioner>

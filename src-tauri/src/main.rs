@@ -157,6 +157,7 @@ fn main() {
             commands::import_from_modpkg,
             commands::peek_fantome,
             commands::import_from_fantome,
+            commands::import_from_git_repo,
             commands::validate_project,
             commands::set_project_thumbnail,
             commands::get_project_thumbnail,

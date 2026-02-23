@@ -6,6 +6,7 @@ import type {
   CreateProjectArgs,
   FantomePeekResult,
   ImportFantomeArgs,
+  ImportGitRepoArgs,
   PackResult,
   WorkshopProject,
 } from "@/lib/tauri";
@@ -14,6 +15,7 @@ import {
   DeleteConfirmDialog,
   ErrorState,
   ImportFantomeDialog,
+  ImportGitRepoDialog,
   LoadingState,
   NewProjectDialog,
   NoProjectsState,
@@ -23,7 +25,9 @@ import {
   useCreateProject,
   useDeleteProject,
   useFantomeImportProgress,
+  useGitImportProgress,
   useImportFromFantome,
+  useImportFromGitRepo,
   useImportFromModpkg,
   usePackProject,
   usePeekFantome,
@@ -53,6 +57,9 @@ function WorkshopIndex() {
   const [fantomePeek, setFantomePeek] = useState<FantomePeekResult | null>(null);
   const [fantomeFilePath, setFantomeFilePath] = useState<string | null>(null);
 
+  // Git repo import state
+  const [gitRepoDialogOpen, setGitRepoDialogOpen] = useState(false);
+
   // API hooks
   const { data: projects = [], isLoading, error } = useWorkshopProjects();
   const createProject = useCreateProject();
@@ -62,6 +69,8 @@ function WorkshopIndex() {
   const peekFantome = usePeekFantome();
   const importFromFantome = useImportFromFantome();
   const fantomeProgress = useFantomeImportProgress();
+  const importFromGitRepo = useImportFromGitRepo();
+  const gitImportProgress = useGitImportProgress();
 
   const { data: validation, isLoading: validationLoading } = useValidateProject(
     selectedProject?.path ?? "",
@@ -175,6 +184,13 @@ function WorkshopIndex() {
     setFantomeFilePath(null);
   }
 
+  function handleImportGitRepoSubmit(args: ImportGitRepoArgs) {
+    importFromGitRepo.mutate(args, {
+      onSuccess: () => setGitRepoDialogOpen(false),
+      onError: (err) => console.error("Failed to import from git repo:", err.message),
+    });
+  }
+
   function renderContent() {
     if (isLoading) return <LoadingState />;
     if (error) return <ErrorState error={error} />;
@@ -204,6 +220,7 @@ function WorkshopIndex() {
         onViewModeChange={setViewMode}
         onImportModpkg={handleImportModpkg}
         onImportFantome={handleImportFantome}
+        onImportGitRepo={() => setGitRepoDialogOpen(true)}
         onNewProject={() => setNewProjectOpen(true)}
         isImporting={importFromModpkg.isPending || peekFantome.isPending}
       />
@@ -244,6 +261,14 @@ function WorkshopIndex() {
         onClose={handleCloseFantomeDialog}
         onSubmit={handleImportFantomeSubmit}
         isPending={importFromFantome.isPending}
+      />
+
+      <ImportGitRepoDialog
+        open={gitRepoDialogOpen}
+        progress={gitImportProgress}
+        onClose={() => setGitRepoDialogOpen(false)}
+        onSubmit={handleImportGitRepoSubmit}
+        isPending={importFromGitRepo.isPending}
       />
     </div>
   );

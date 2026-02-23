@@ -219,6 +219,16 @@ export interface FantomeImportProgress {
   total: number;
 }
 
+export interface ImportGitRepoArgs {
+  url: string;
+  branch?: string;
+}
+
+export interface GitImportProgress {
+  stage: "downloading" | "extracting" | "complete" | "error";
+  message: string | null;
+}
+
 /**
  * Raw IPC result from Tauri commands.
  * This matches the Rust IpcResult<T> serialization format.
@@ -312,6 +322,8 @@ export const api = {
   peekFantome: (filePath: string) => invokeResult<FantomePeekResult>("peek_fantome", { filePath }),
   importFromFantome: (args: ImportFantomeArgs) =>
     invokeResult<WorkshopProject>("import_from_fantome", { args }),
+  importFromGitRepo: (args: ImportGitRepoArgs) =>
+    invokeResult<WorkshopProject>("import_from_git_repo", { args }),
   validateProject: (projectPath: string) =>
     invokeResult<ValidationResult>("validate_project", { projectPath }),
   setProjectThumbnail: (projectPath: string, imagePath: string) =>

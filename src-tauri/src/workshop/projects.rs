@@ -1,7 +1,7 @@
 use super::{
     find_config_file, is_valid_project_name, load_mod_project, load_workshop_project,
-    CreateProjectArgs, FantomeImportProgress, FantomePeekResult, ImportFantomeArgs,
-    SaveProjectConfigArgs, Workshop, WorkshopProject,
+    CreateProjectArgs, FantomeImportProgress, FantomePeekResult, GitImportProgress,
+    ImportFantomeArgs, ImportGitRepoArgs, SaveProjectConfigArgs, Workshop, WorkshopProject,
 };
 use crate::error::{AppError, AppResult};
 use crate::state::Settings;
@@ -466,6 +466,131 @@ impl Workshop {
 
         load_workshop_project(&project_dir)
     }
+
+    /// Import a project from a GitHub repository by downloading and extracting its tarball.
+    pub fn import_from_git_repo(
+        &self,
+        settings: &Settings,
+        args: ImportGitRepoArgs,
+    ) -> AppResult<WorkshopProject> {
+        let workshop_path = self.workshop_dir(settings)?;
+        let (owner, repo) = parse_github_url(&args.url)?;
+        let branch = args.branch.unwrap_or_else(|| "main".to_string());
+
+        let tarball_url = format!(
+            "https://github.com/{}/{}/archive/refs/heads/{}.tar.gz",
+            owner, repo, branch
+        );
+
+        self.emit_git_progress("downloading", None);
+
+        let response = reqwest::blocking::get(&tarball_url)
+            .map_err(|e| AppError::Other(format!("Failed to download repository: {}", e)))?;
+
+        if !response.status().is_success() {
+            return Err(AppError::Other(format!(
+                "Failed to download repository (HTTP {}). Check the URL and branch name.",
+                response.status()
+            )));
+        }
+
+        let bytes = response
+            .bytes()
+            .map_err(|e| AppError::Other(format!("Failed to read response: {}", e)))?;
+
+        self.emit_git_progress("extracting", None);
+
+        let temp_dir = workshop_path.join(format!(".git-import-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&temp_dir)?;
+
+        let result = (|| -> AppResult<WorkshopProject> {
+            let decoder = flate2::read::GzDecoder::new(std::io::Cursor::new(&bytes));
+            let mut archive = tar::Archive::new(decoder);
+            archive.unpack(&temp_dir)?;
+
+            // GitHub tarballs extract to "{repo}-{branch}/" — find the single top-level directory
+            let mut entries = fs::read_dir(&temp_dir)?;
+            let extracted_dir = entries
+                .next()
+                .ok_or_else(|| AppError::Other("Archive is empty".to_string()))??
+                .path();
+
+            if !extracted_dir.is_dir() {
+                return Err(AppError::Other(
+                    "Archive does not contain a directory".to_string(),
+                ));
+            }
+
+            if find_config_file(&extracted_dir).is_none() {
+                return Err(AppError::ValidationFailed(
+                    "Repository does not contain a mod.config.json or mod.config.toml".to_string(),
+                ));
+            }
+
+            let config_path = find_config_file(&extracted_dir).unwrap();
+            let mod_project = load_mod_project(&config_path)?;
+
+            let project_name = &mod_project.name;
+            if !is_valid_project_name(project_name) {
+                return Err(AppError::ValidationFailed(format!(
+                    "Project name '{}' in config is invalid. Must be lowercase alphanumeric with hyphens only.",
+                    project_name
+                )));
+            }
+
+            let project_dir = workshop_path.join(project_name);
+            if project_dir.exists() {
+                return Err(AppError::ProjectAlreadyExists(project_name.clone()));
+            }
+
+            fs::rename(&extracted_dir, &project_dir)?;
+
+            self.emit_git_progress("complete", None);
+            load_workshop_project(&project_dir)
+        })();
+
+        if result.is_err() {
+            self.emit_git_progress("error", None);
+        }
+
+        let _ = fs::remove_dir_all(&temp_dir);
+        result
+    }
+
+    fn emit_git_progress(&self, stage: &str, message: Option<&str>) {
+        let _ = self.app_handle.emit(
+            "git-import-progress",
+            GitImportProgress {
+                stage: stage.to_string(),
+                message: message.map(String::from),
+            },
+        );
+    }
+}
+
+/// Parse a GitHub URL and extract the owner and repo name.
+fn parse_github_url(url: &str) -> AppResult<(String, String)> {
+    let url = url.trim().trim_end_matches('/');
+    let url = url.strip_suffix(".git").unwrap_or(url);
+
+    let path = url
+        .strip_prefix("https://github.com/")
+        .or_else(|| url.strip_prefix("http://github.com/"))
+        .ok_or_else(|| {
+            AppError::ValidationFailed(
+                "URL must be a GitHub repository (https://github.com/owner/repo)".to_string(),
+            )
+        })?;
+
+    let parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    if parts.len() < 2 {
+        return Err(AppError::ValidationFailed(
+            "URL must include owner and repository name (https://github.com/owner/repo)"
+                .to_string(),
+        ));
+    }
+
+    Ok((parts[0].to_string(), parts[1].to_string()))
 }
 
 // ============================================================================

@@ -1,8 +1,8 @@
 use crate::error::{AppResult, IpcResult, MutexResultExt};
 use crate::state::SettingsState;
 use crate::workshop::{
-    CreateProjectArgs, FantomePeekResult, ImportFantomeArgs, PackProjectArgs, PackResult,
-    SaveProjectConfigArgs, ValidationResult, WorkshopProject, WorkshopState,
+    CreateProjectArgs, FantomePeekResult, ImportFantomeArgs, ImportGitRepoArgs, PackProjectArgs,
+    PackResult, SaveProjectConfigArgs, ValidationResult, WorkshopProject, WorkshopState,
 };
 use std::collections::HashMap;
 use tauri::State;
@@ -103,6 +103,19 @@ pub fn import_from_fantome(
     let result: AppResult<WorkshopProject> = (|| {
         let settings = settings.0.lock().mutex_err()?.clone();
         workshop.0.import_from_fantome(&settings, args)
+    })();
+    result.into()
+}
+
+#[tauri::command]
+pub fn import_from_git_repo(
+    args: ImportGitRepoArgs,
+    workshop: State<WorkshopState>,
+    settings: State<SettingsState>,
+) -> IpcResult<WorkshopProject> {
+    let result: AppResult<WorkshopProject> = (|| {
+        let settings = settings.0.lock().mutex_err()?.clone();
+        workshop.0.import_from_git_repo(&settings, args)
     })();
     result.into()
 }

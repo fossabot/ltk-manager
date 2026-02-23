@@ -7,6 +7,7 @@ export {
   NotConfiguredState,
 } from "./EmptyStates";
 export { ImportFantomeDialog } from "./ImportFantomeDialog";
+export { ImportGitRepoDialog } from "./ImportGitRepoDialog";
 export { NewProjectDialog } from "./NewProjectDialog";
 export { PackDialog } from "./PackDialog";
 export { ProjectCard } from "./ProjectCard";
