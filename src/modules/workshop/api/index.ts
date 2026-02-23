@@ -1,8 +1,11 @@
 export { workshopKeys } from "./keys";
 export { useCreateProject } from "./useCreateProject";
 export { useDeleteProject } from "./useDeleteProject";
+export { useFantomeImportProgress } from "./useFantomeImportProgress";
+export { useImportFromFantome } from "./useImportFromFantome";
 export { useImportFromModpkg } from "./useImportFromModpkg";
 export { usePackProject } from "./usePackProject";
+export { usePeekFantome } from "./usePeekFantome";
 export { useProjectActions } from "./useProjectActions";
 export { projectThumbnailOptions, useProjectThumbnail } from "./useProjectThumbnail";
 export { useRenameProject } from "./useRenameProject";

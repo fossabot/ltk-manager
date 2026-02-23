@@ -1,6 +1,15 @@
-import { LuDownload, LuGrid3X3, LuList, LuPlus, LuSearch } from "react-icons/lu";
+import {
+  LuChevronDown,
+  LuDownload,
+  LuFileArchive,
+  LuGrid3X3,
+  LuList,
+  LuPackage,
+  LuPlus,
+  LuSearch,
+} from "react-icons/lu";
 
-import { Button, IconButton } from "@/components";
+import { Button, IconButton, Menu } from "@/components";
 
 export type ViewMode = "grid" | "list";
 
@@ -9,7 +18,8 @@ interface WorkshopToolbarProps {
   onSearchChange: (query: string) => void;
   viewMode: ViewMode;
   onViewModeChange: (mode: ViewMode) => void;
-  onImport: () => void;
+  onImportModpkg: () => void;
+  onImportFantome: () => void;
   onNewProject: () => void;
   isImporting?: boolean;
 }
@@ -19,7 +29,8 @@ export function WorkshopToolbar({
   onSearchChange,
   viewMode,
   onViewModeChange,
-  onImport,
+  onImportModpkg,
+  onImportFantome,
   onNewProject,
   isImporting,
 }: WorkshopToolbarProps) {
@@ -57,15 +68,33 @@ export function WorkshopToolbar({
       </div>
 
       {/* Actions */}
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={onImport}
-        loading={isImporting}
-        left={<LuDownload className="h-4 w-4" />}
-      >
-        Import
-      </Button>
+      <Menu.Root>
+        <Menu.Trigger
+          render={
+            <Button
+              variant="outline"
+              size="sm"
+              loading={isImporting}
+              left={<LuDownload className="h-4 w-4" />}
+              right={<LuChevronDown className="h-3.5 w-3.5" />}
+            >
+              Import
+            </Button>
+          }
+        />
+        <Menu.Portal>
+          <Menu.Positioner>
+            <Menu.Popup>
+              <Menu.Item icon={<LuFileArchive className="h-4 w-4" />} onClick={onImportFantome}>
+                From Fantome
+              </Menu.Item>
+              <Menu.Item icon={<LuPackage className="h-4 w-4" />} onClick={onImportModpkg}>
+                From Modpkg
+              </Menu.Item>
+            </Menu.Popup>
+          </Menu.Positioner>
+        </Menu.Portal>
+      </Menu.Root>
       <Button
         variant="filled"
         size="sm"

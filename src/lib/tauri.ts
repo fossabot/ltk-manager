@@ -197,6 +197,28 @@ export interface ValidationResult {
   warnings: string[];
 }
 
+export interface FantomePeekResult {
+  name: string;
+  author: string;
+  version: string;
+  description: string;
+  wadFiles: string[];
+  suggestedName: string;
+}
+
+export interface ImportFantomeArgs {
+  filePath: string;
+  name: string;
+  displayName: string;
+}
+
+export interface FantomeImportProgress {
+  stage: "extracting" | "finalizing" | "complete" | "error";
+  currentWad: string | null;
+  current: number;
+  total: number;
+}
+
 /**
  * Raw IPC result from Tauri commands.
  * This matches the Rust IpcResult<T> serialization format.
@@ -287,6 +309,9 @@ export const api = {
     invokeResult<PackResult>("pack_workshop_project", { args }),
   importFromModpkg: (filePath: string) =>
     invokeResult<WorkshopProject>("import_from_modpkg", { filePath }),
+  peekFantome: (filePath: string) => invokeResult<FantomePeekResult>("peek_fantome", { filePath }),
+  importFromFantome: (args: ImportFantomeArgs) =>
+    invokeResult<WorkshopProject>("import_from_fantome", { args }),
   validateProject: (projectPath: string) =>
     invokeResult<ValidationResult>("validate_project", { projectPath }),
   setProjectThumbnail: (projectPath: string, imagePath: string) =>

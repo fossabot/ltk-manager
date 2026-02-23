@@ -155,6 +155,8 @@ fn main() {
             commands::delete_workshop_project,
             commands::pack_workshop_project,
             commands::import_from_modpkg,
+            commands::peek_fantome,
+            commands::import_from_fantome,
             commands::validate_project,
             commands::set_project_thumbnail,
             commands::get_project_thumbnail,
