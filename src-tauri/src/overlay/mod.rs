@@ -8,12 +8,23 @@ use camino::Utf8PathBuf;
 use std::path::PathBuf;
 use tauri::Emitter;
 
+#[derive(Clone, serde::Serialize, ts_rs::TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub enum OverlayStage {
+    Indexing,
+    Collecting,
+    Patching,
+    Strings,
+    Complete,
+}
+
 /// Progress event emitted during overlay building.
 #[derive(Clone, serde::Serialize, ts_rs::TS)]
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct OverlayProgress {
-    pub stage: String,
+    pub stage: OverlayStage,
     pub current_file: Option<String>,
     pub current: u32,
     pub total: u32,
@@ -72,17 +83,17 @@ pub fn ensure_overlay(library: &ModLibrary, settings: &Settings) -> AppResult<Pa
             .with_progress(move |progress| {
                 // Convert ltk_overlay progress to our format
                 let stage = match progress.stage {
-                    ltk_overlay::OverlayStage::Indexing => "indexing",
-                    ltk_overlay::OverlayStage::CollectingOverrides => "collecting",
-                    ltk_overlay::OverlayStage::PatchingWad => "patching",
-                    ltk_overlay::OverlayStage::ApplyingStringOverrides => "strings",
-                    ltk_overlay::OverlayStage::Complete => "complete",
+                    ltk_overlay::OverlayStage::Indexing => OverlayStage::Indexing,
+                    ltk_overlay::OverlayStage::CollectingOverrides => OverlayStage::Collecting,
+                    ltk_overlay::OverlayStage::PatchingWad => OverlayStage::Patching,
+                    ltk_overlay::OverlayStage::ApplyingStringOverrides => OverlayStage::Strings,
+                    ltk_overlay::OverlayStage::Complete => OverlayStage::Complete,
                 };
 
                 let _ = app_handle_clone.emit(
                     "overlay-progress",
                     OverlayProgress {
-                        stage: stage.to_string(),
+                        stage,
                         current_file: progress.current_file,
                         current: progress.current,
                         total: progress.total,

@@ -113,12 +113,22 @@ pub struct ImportFantomeArgs {
     pub display_name: String,
 }
 
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub enum FantomeImportStage {
+    Extracting,
+    Finalizing,
+    Complete,
+    Error,
+}
+
 /// Progress event emitted during fantome import.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct FantomeImportProgress {
-    pub stage: String,
+    pub stage: FantomeImportStage,
     pub current_wad: Option<String>,
     pub current: u32,
     pub total: u32,
@@ -134,12 +144,22 @@ pub struct ImportGitRepoArgs {
     pub branch: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub enum GitImportStage {
+    Downloading,
+    Extracting,
+    Complete,
+    Error,
+}
+
 /// Progress event emitted during git repo import.
 #[derive(Debug, Clone, Serialize, TS)]
 #[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct GitImportProgress {
-    pub stage: String,
+    pub stage: GitImportStage,
     pub message: Option<String>,
 }
 

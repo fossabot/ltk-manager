@@ -1,7 +1,8 @@
 use super::{
     find_config_file, is_valid_project_name, load_mod_project, load_workshop_project,
-    CreateProjectArgs, FantomeImportProgress, FantomePeekResult, GitImportProgress,
-    ImportFantomeArgs, ImportGitRepoArgs, SaveProjectConfigArgs, Workshop, WorkshopProject,
+    CreateProjectArgs, FantomeImportProgress, FantomeImportStage, FantomePeekResult,
+    GitImportProgress, GitImportStage, ImportFantomeArgs, ImportGitRepoArgs, SaveProjectConfigArgs,
+    Workshop, WorkshopProject,
 };
 use crate::error::{AppError, AppResult};
 use crate::state::Settings;
@@ -274,11 +275,21 @@ impl Workshop {
             fs::create_dir_all(&base_dir)?;
 
             for (idx, wad_name) in wad_names.iter().enumerate() {
-                self.emit_fantome_progress("extracting", Some(wad_name), idx as u32, total_wads);
+                self.emit_fantome_progress(
+                    FantomeImportStage::Extracting,
+                    Some(wad_name),
+                    idx as u32,
+                    total_wads,
+                );
                 extract_fantome_wad(&mut archive, wad_name, &base_dir)?;
             }
 
-            self.emit_fantome_progress("finalizing", None, total_wads, total_wads);
+            self.emit_fantome_progress(
+                FantomeImportStage::Finalizing,
+                None,
+                total_wads,
+                total_wads,
+            );
 
             let readme_path = project_dir.join("README.md");
             extract_fantome_file(&mut archive, "meta/readme.md", &readme_path);
@@ -336,13 +347,13 @@ impl Workshop {
             let config_path = project_dir.join("mod.config.json");
             fs::write(&config_path, serde_json::to_string_pretty(&mod_project)?)?;
 
-            self.emit_fantome_progress("complete", None, total_wads, total_wads);
+            self.emit_fantome_progress(FantomeImportStage::Complete, None, total_wads, total_wads);
 
             load_workshop_project(&project_dir)
         })();
 
         if result.is_err() {
-            self.emit_fantome_progress("error", None, 0, total_wads);
+            self.emit_fantome_progress(FantomeImportStage::Error, None, 0, total_wads);
             let _ = fs::remove_dir_all(&project_dir);
         }
 
@@ -351,7 +362,7 @@ impl Workshop {
 
     fn emit_fantome_progress(
         &self,
-        stage: &str,
+        stage: FantomeImportStage,
         current_wad: Option<&str>,
         current: u32,
         total: u32,
@@ -359,7 +370,7 @@ impl Workshop {
         let _ = self.app_handle.emit(
             "fantome-import-progress",
             FantomeImportProgress {
-                stage: stage.to_string(),
+                stage,
                 current_wad: current_wad.map(String::from),
                 current,
                 total,
@@ -480,7 +491,7 @@ impl Workshop {
             owner, repo, branch
         );
 
-        self.emit_git_progress("downloading", None);
+        self.emit_git_progress(GitImportStage::Downloading, None);
 
         let response = reqwest::blocking::get(&tarball_url)
             .map_err(|e| AppError::Other(format!("Failed to download repository: {}", e)))?;
@@ -496,7 +507,7 @@ impl Workshop {
             .bytes()
             .map_err(|e| AppError::Other(format!("Failed to read response: {}", e)))?;
 
-        self.emit_git_progress("extracting", None);
+        self.emit_git_progress(GitImportStage::Extracting, None);
 
         let temp_dir = workshop_path.join(format!(".git-import-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&temp_dir)?;
@@ -543,12 +554,12 @@ impl Workshop {
 
             fs::rename(&extracted_dir, &project_dir)?;
 
-            self.emit_git_progress("complete", None);
+            self.emit_git_progress(GitImportStage::Complete, None);
             load_workshop_project(&project_dir)
         })();
 
         if result.is_err() {
-            self.emit_git_progress("error", None);
+            self.emit_git_progress(GitImportStage::Error, None);
         }
 
         if temp_dir.exists() {
@@ -557,11 +568,11 @@ impl Workshop {
         result
     }
 
-    fn emit_git_progress(&self, stage: &str, message: Option<&str>) {
+    fn emit_git_progress(&self, stage: GitImportStage, message: Option<&str>) {
         let _ = self.app_handle.emit(
             "git-import-progress",
             GitImportProgress {
-                stage: stage.to_string(),
+                stage,
                 message: message.map(String::from),
             },
         );
