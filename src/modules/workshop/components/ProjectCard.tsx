@@ -9,6 +9,7 @@ import {
   LuPlay,
   LuTrash2,
 } from "react-icons/lu";
+import { twMerge } from "tailwind-merge";
 
 import { Button, Checkbox, IconButton, Menu } from "@/components";
 import type { WorkshopProject } from "@/lib/tauri";
@@ -48,6 +49,7 @@ export function ProjectCard({ project, viewMode, onEdit }: ProjectCardProps) {
   const openDeleteDialog = useWorkshopDialogsStore((s) => s.openDeleteDialog);
 
   const testProjects = useTestProjects();
+  const isTestDisabled = isPatcherActive || testProjects.isPending;
 
   function handleTest() {
     testProjects.mutate(
@@ -73,7 +75,11 @@ export function ProjectCard({ project, viewMode, onEdit }: ProjectCardProps) {
   if (viewMode === "list") {
     return (
       <div
-        className={`group flex items-center gap-4 rounded-lg border bg-surface-900 p-4 transition-all hover:border-surface-600 ${listBorderClass}`}
+        className={twMerge(
+          "group flex items-center gap-4 rounded-lg border bg-surface-900 p-4 transition-all hover:border-surface-600",
+          listBorderClass,
+          isPatcherActive && !isTesting && "opacity-50",
+        )}
       >
         <Checkbox
           size="md"
@@ -117,7 +123,7 @@ export function ProjectCard({ project, viewMode, onEdit }: ProjectCardProps) {
             size="sm"
             left={<LuPlay className="h-4 w-4" />}
             onClick={handleTest}
-            disabled={isPatcherActive}
+            disabled={isTestDisabled}
           >
             Test
           </Button>
@@ -151,7 +157,7 @@ export function ProjectCard({ project, viewMode, onEdit }: ProjectCardProps) {
                   <Menu.Item
                     icon={<LuPlay className="h-4 w-4" />}
                     onClick={handleTest}
-                    disabled={isPatcherActive}
+                    disabled={isTestDisabled}
                   >
                     Test
                   </Menu.Item>
@@ -198,10 +204,17 @@ export function ProjectCard({ project, viewMode, onEdit }: ProjectCardProps) {
 
   return (
     <div
-      className={`group relative rounded-xl border bg-surface-800 transition-all hover:border-surface-400 ${gridBorderClass}`}
+      className={twMerge(
+        "group relative rounded-xl border bg-surface-800 transition-all hover:border-surface-400",
+        gridBorderClass,
+        isPatcherActive && !isTesting && "opacity-50",
+      )}
     >
       <div
-        className={`absolute top-0 left-0 z-10 p-2 ${isPatcherActive ? "" : "cursor-pointer"}`}
+        className={twMerge(
+          "absolute top-0 left-0 z-10 p-2",
+          isPatcherActive ? "cursor-not-allowed" : "cursor-pointer",
+        )}
         onClick={(e) => {
           if (!isPatcherActive && e.target === e.currentTarget) toggle(project.path);
         }}

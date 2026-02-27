@@ -52,7 +52,7 @@ export const Checkbox = forwardRef<HTMLButtonElement, CheckboxProps>(
         ref={ref}
         disabled={disabled}
         className={twMerge(
-          "group inline-flex shrink-0 items-center justify-center rounded border transition-colors",
+          "group inline-flex shrink-0 cursor-pointer items-center justify-center rounded border transition-colors",
           sizeClasses[size],
           "border-surface-600 bg-surface-800",
           "hover:border-surface-500 hover:bg-surface-700",

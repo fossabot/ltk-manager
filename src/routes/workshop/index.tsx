@@ -2,6 +2,8 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 
 import type { WorkshopProject } from "@/lib/tauri";
 import {
+  BulkDeleteDialog,
+  BulkPackDialog,
   DeleteConfirmDialog,
   ErrorState,
   ImportFantomeDialog,
@@ -12,7 +14,6 @@ import {
   NoSearchResultsState,
   PackDialog,
   ProjectGrid,
-  SelectionActionBar,
   useFilteredProjects,
   useWorkshopProjects,
   WorkshopToolbar,
@@ -47,9 +48,10 @@ function WorkshopIndex() {
     <div className="flex h-full flex-col">
       <WorkshopToolbar />
       <div className="flex-1 overflow-auto p-6">{renderContent()}</div>
-      <SelectionActionBar />
       <PackDialog />
+      <BulkPackDialog />
       <DeleteConfirmDialog />
+      <BulkDeleteDialog />
       <NewProjectDialog />
       <ImportFantomeDialog />
       <ImportGitRepoDialog />

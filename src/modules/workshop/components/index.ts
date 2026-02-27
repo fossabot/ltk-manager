@@ -1,3 +1,5 @@
+export { BulkDeleteDialog } from "./BulkDeleteDialog";
+export { BulkPackDialog } from "./BulkPackDialog";
 export { DeleteConfirmDialog } from "./DeleteConfirmDialog";
 export {
   ErrorState,
@@ -14,6 +16,5 @@ export { ProjectCard } from "./ProjectCard";
 export { ProjectProvider, useProjectContext } from "./ProjectContext";
 export { ProjectGrid } from "./ProjectGrid";
 export { ProjectHeader } from "./ProjectHeader";
-export { SelectionActionBar } from "./SelectionActionBar";
 export type { ViewMode } from "./WorkshopToolbar";
 export { WorkshopToolbar } from "./WorkshopToolbar";

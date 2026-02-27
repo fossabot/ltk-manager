@@ -19,6 +19,7 @@ import { useWorkshopDialogsStore, useWorkshopSelectionStore, useWorkshopViewStor
 import { useFilteredProjects } from "../api/useFilteredProjects";
 import { useImportFromModpkg } from "../api/useImportFromModpkg";
 import { usePeekFantome } from "../api/usePeekFantome";
+import { ActionsMenu } from "./ActionsMenu";
 
 export type ViewMode = "grid" | "list";
 
@@ -100,13 +101,16 @@ export function WorkshopToolbar() {
       </div>
 
       {!isPatcherActive && (
-        <IconButton
-          icon={<LuSquareCheckBig className="h-4 w-4" />}
-          variant="ghost"
-          size="sm"
-          onClick={() => selectAll(filteredProjects.map((p) => p.path))}
-          aria-label="Select all projects"
-        />
+        <>
+          <IconButton
+            icon={<LuSquareCheckBig className="h-4 w-4" />}
+            variant="ghost"
+            size="sm"
+            onClick={() => selectAll(filteredProjects.map((p) => p.path))}
+            aria-label="Select all projects"
+          />
+          <ActionsMenu />
+        </>
       )}
 
       <Menu.Root>

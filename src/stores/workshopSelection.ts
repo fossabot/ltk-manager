@@ -1,4 +1,7 @@
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
+
+import { sessionJsonStorage } from "./storage";
 
 interface WorkshopSelectionStore {
   selectedPaths: Set<string>;
@@ -7,18 +10,26 @@ interface WorkshopSelectionStore {
   clear: () => void;
 }
 
-export const useWorkshopSelectionStore = create<WorkshopSelectionStore>((set) => ({
-  selectedPaths: new Set(),
-  toggle: (path) =>
-    set((state) => {
-      const next = new Set(state.selectedPaths);
-      if (next.has(path)) {
-        next.delete(path);
-      } else {
-        next.add(path);
-      }
-      return { selectedPaths: next };
+export const useWorkshopSelectionStore = create<WorkshopSelectionStore>()(
+  persist(
+    (set) => ({
+      selectedPaths: new Set(),
+      toggle: (path) =>
+        set((state) => {
+          const next = new Set(state.selectedPaths);
+          if (next.has(path)) {
+            next.delete(path);
+          } else {
+            next.add(path);
+          }
+          return { selectedPaths: next };
+        }),
+      selectAll: (paths) => set({ selectedPaths: new Set(paths) }),
+      clear: () => set({ selectedPaths: new Set() }),
     }),
-  selectAll: (paths) => set({ selectedPaths: new Set(paths) }),
-  clear: () => set({ selectedPaths: new Set() }),
-}));
+    {
+      name: "workshop-selection",
+      storage: sessionJsonStorage,
+    },
+  ),
+);
