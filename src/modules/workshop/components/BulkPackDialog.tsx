@@ -120,10 +120,10 @@ export function BulkPackDialog() {
               <div className="space-y-4">
                 {phase === "packing" && (
                   <Progress.Root
-                    value={currentIndex}
+                    value={currentIndex + 1}
                     max={projects.length}
                     label={`Packing: ${projects[currentIndex]?.displayName ?? ""}`}
-                    valueLabel={`${results.length} / ${projects.length}`}
+                    valueLabel={`${currentIndex + 1} / ${projects.length}`}
                   >
                     <Progress.Track>
                       <Progress.Indicator />
@@ -142,37 +142,36 @@ export function BulkPackDialog() {
 
                 <div className="max-h-48 overflow-y-auto rounded-lg border border-surface-600 bg-surface-900 p-3">
                   <ul className="space-y-1.5 text-sm">
-                    {results.map((r, i) => (
-                      <li key={i} className="flex items-center gap-2">
-                        {r.outcome.ok ? (
-                          <LuCheck className="h-4 w-4 shrink-0 text-green-400" />
-                        ) : (
-                          <LuX className="h-4 w-4 shrink-0 text-red-400" />
-                        )}
-                        <span className={r.outcome.ok ? "flex-1 text-surface-300" : "text-red-300"}>
-                          {r.displayName}
-                        </span>
-                        {r.outcome.ok && (
-                          <SimpleTooltip content="Show in Explorer">
-                            <IconButton
-                              icon={<LuFolderOpen className="h-3.5 w-3.5" />}
-                              variant="ghost"
-                              size="sm"
-                              onClick={() =>
-                                api.revealInExplorer(
-                                  r.outcome.ok ? r.outcome.result.outputPath : "",
-                                )
-                              }
-                            />
-                          </SimpleTooltip>
-                        )}
-                        {!r.outcome.ok && (
-                          <span className="truncate text-xs text-red-400/70">
-                            — {r.outcome.error}
+                    {results.map((r, i) => {
+                      const { outcome } = r;
+                      return (
+                        <li key={i} className="flex items-center gap-2">
+                          {outcome.ok ? (
+                            <LuCheck className="h-4 w-4 shrink-0 text-green-400" />
+                          ) : (
+                            <LuX className="h-4 w-4 shrink-0 text-red-400" />
+                          )}
+                          <span className={outcome.ok ? "flex-1 text-surface-300" : "text-red-300"}>
+                            {r.displayName}
                           </span>
-                        )}
-                      </li>
-                    ))}
+                          {outcome.ok && (
+                            <SimpleTooltip content="Show in Explorer">
+                              <IconButton
+                                icon={<LuFolderOpen className="h-3.5 w-3.5" />}
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => api.revealInExplorer(outcome.result.outputPath)}
+                              />
+                            </SimpleTooltip>
+                          )}
+                          {!outcome.ok && (
+                            <span className="truncate text-xs text-red-400/70">
+                              — {outcome.error}
+                            </span>
+                          )}
+                        </li>
+                      );
+                    })}
                   </ul>
                 </div>
               </div>

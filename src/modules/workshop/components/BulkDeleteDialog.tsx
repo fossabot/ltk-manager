@@ -122,10 +122,10 @@ export function BulkDeleteDialog() {
               <div className="space-y-4">
                 {phase === "deleting" && (
                   <Progress.Root
-                    value={currentIndex}
+                    value={currentIndex + 1}
                     max={projects.length}
                     label={`Deleting: ${projects[currentIndex]?.displayName ?? ""}`}
-                    valueLabel={`${results.length} / ${projects.length}`}
+                    valueLabel={`${currentIndex + 1} / ${projects.length}`}
                   >
                     <Progress.Track>
                       <Progress.Indicator />
