@@ -1,61 +1,29 @@
-import type { NavigateFn } from "@tanstack/react-router";
-import { useState } from "react";
+import { api, type WorkshopProject } from "@/lib/tauri";
+import { useWorkshopDialogsStore } from "@/stores";
 
-import { api, type PackResult, type WorkshopProject } from "@/lib/tauri";
+import { useTestProjects } from "./useTestProject";
 
-import { useDeleteProject } from "./useDeleteProject";
-import { usePackProject } from "./usePackProject";
-import { useValidateProject } from "./useValidateProject";
+export function useProjectActions(project: WorkshopProject | undefined) {
+  const testProjects = useTestProjects();
+  const openPackDialog = useWorkshopDialogsStore((s) => s.openPackDialog);
+  const openDeleteDialog = useWorkshopDialogsStore((s) => s.openDeleteDialog);
 
-export function useProjectActions(project: WorkshopProject | undefined, navigate: NavigateFn) {
-  const [packDialogOpen, setPackDialogOpen] = useState(false);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [packResult, setPackResult] = useState<PackResult | null>(null);
-
-  const deleteProject = useDeleteProject();
-  const packProject = usePackProject();
-  const { data: validation, isLoading: validationLoading } = useValidateProject(
-    project?.path ?? "",
-    packDialogOpen,
-  );
-
-  function handlePack(format: "modpkg" | "fantome") {
+  function handleTestProject() {
     if (!project) return;
-    packProject.mutate(
-      { projectPath: project.path, format },
-      {
-        onSuccess: setPackResult,
-        onError: (err) => console.error("Failed to pack project:", err.message),
-      },
+    testProjects.mutate(
+      { projects: [{ path: project.path, displayName: project.displayName }] },
+      { onError: (err) => console.error("Failed to test project:", err.message) },
     );
   }
 
   function handleOpenPackDialog() {
-    setPackResult(null);
-    setPackDialogOpen(true);
-  }
-
-  function handleClosePackDialog() {
-    setPackDialogOpen(false);
-    setPackResult(null);
-  }
-
-  function handleDeleteProject() {
     if (!project) return;
-    deleteProject.mutate(project.path, {
-      onSuccess: () => {
-        navigate({ to: "/workshop" });
-      },
-      onError: (err) => console.error("Failed to delete project:", err.message),
-    });
+    openPackDialog(project);
   }
 
-  function openDeleteDialog() {
-    setDeleteDialogOpen(true);
-  }
-
-  function closeDeleteDialog() {
-    setDeleteDialogOpen(false);
+  function handleOpenDeleteDialog() {
+    if (!project) return;
+    openDeleteDialog(project);
   }
 
   async function handleOpenLocation() {
@@ -68,19 +36,10 @@ export function useProjectActions(project: WorkshopProject | undefined, navigate
   }
 
   return {
-    packDialogOpen,
-    packResult,
-    deleteDialogOpen,
-    validation: validation ?? null,
-    validationLoading,
-    isPacking: packProject.isPending,
-    isDeleting: deleteProject.isPending,
-    handlePack,
+    isTesting: testProjects.isPending,
+    handleTestProject,
     handleOpenPackDialog,
-    handleClosePackDialog,
-    handleDeleteProject,
+    handleOpenDeleteDialog,
     handleOpenLocation,
-    openDeleteDialog,
-    closeDeleteDialog,
   };
 }

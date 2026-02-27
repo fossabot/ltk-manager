@@ -2,9 +2,10 @@ import { z } from "zod";
 
 import { Button, Dialog } from "@/components";
 import { useAppForm } from "@/lib/form";
-import type { CreateProjectArgs } from "@/lib/tauri";
+import { useWorkshopDialogsStore } from "@/stores";
 
-// Validation schema for the project form
+import { useCreateProject } from "../api/useCreateProject";
+
 const projectSchema = z.object({
   name: z
     .string()
@@ -19,13 +20,6 @@ const projectSchema = z.object({
   authorName: z.string(),
 });
 
-interface NewProjectDialogProps {
-  open: boolean;
-  onClose: () => void;
-  onSubmit: (args: CreateProjectArgs) => void;
-  isPending?: boolean;
-}
-
 function generateDisplayName(slug: string) {
   return slug
     .split("-")
@@ -33,7 +27,11 @@ function generateDisplayName(slug: string) {
     .join(" ");
 }
 
-export function NewProjectDialog({ open, onClose, onSubmit, isPending }: NewProjectDialogProps) {
+export function NewProjectDialog() {
+  const open = useWorkshopDialogsStore((s) => s.newProjectOpen);
+  const closeDialog = useWorkshopDialogsStore((s) => s.closeNewProjectDialog);
+  const createProject = useCreateProject();
+
   const form = useAppForm({
     defaultValues: {
       name: "",
@@ -45,18 +43,27 @@ export function NewProjectDialog({ open, onClose, onSubmit, isPending }: NewProj
       onChange: projectSchema,
     },
     onSubmit: ({ value }) => {
-      onSubmit({
-        name: value.name,
-        displayName: value.displayName || generateDisplayName(value.name),
-        description: value.description,
-        authors: value.authorName ? [value.authorName] : [],
-      });
+      createProject.mutate(
+        {
+          name: value.name,
+          displayName: value.displayName || generateDisplayName(value.name),
+          description: value.description,
+          authors: value.authorName ? [value.authorName] : [],
+        },
+        {
+          onSuccess: () => {
+            form.reset();
+            closeDialog();
+          },
+          onError: (err) => console.error("Failed to create project:", err.message),
+        },
+      );
     },
   });
 
   function handleClose() {
     form.reset();
-    onClose();
+    closeDialog();
   }
 
   return (
@@ -132,7 +139,7 @@ export function NewProjectDialog({ open, onClose, onSubmit, isPending }: NewProj
                 {({ canSubmit, isValid }) => (
                   <Button
                     variant="filled"
-                    loading={isPending}
+                    loading={createProject.isPending}
                     disabled={!canSubmit || !isValid}
                     onClick={() => form.handleSubmit()}
                   >

@@ -2,7 +2,10 @@ import { z } from "zod";
 
 import { Button, Dialog } from "@/components";
 import { useAppForm } from "@/lib/form";
-import type { GitImportProgress, ImportGitRepoArgs } from "@/lib/tauri";
+import { useWorkshopDialogsStore } from "@/stores";
+
+import { useGitImportProgress } from "../api/useGitImportProgress";
+import { useImportFromGitRepo } from "../api/useImportFromGitRepo";
 
 const importSchema = z.object({
   url: z
@@ -15,22 +18,14 @@ const importSchema = z.object({
   branch: z.string(),
 });
 
-interface ImportGitRepoDialogProps {
-  open: boolean;
-  progress: GitImportProgress | null;
-  onClose: () => void;
-  onSubmit: (args: ImportGitRepoArgs) => void;
-  isPending: boolean;
-}
+export function ImportGitRepoDialog() {
+  const open = useWorkshopDialogsStore((s) => s.gitImportOpen);
+  const closeDialog = useWorkshopDialogsStore((s) => s.closeGitImportDialog);
+  const importFromGitRepo = useImportFromGitRepo();
+  const progress = useGitImportProgress();
 
-export function ImportGitRepoDialog({
-  open,
-  progress,
-  onClose,
-  onSubmit,
-  isPending,
-}: ImportGitRepoDialogProps) {
-  const isImporting = isPending || (progress !== null && progress.stage !== "complete");
+  const isImporting =
+    importFromGitRepo.isPending || (progress !== null && progress.stage !== "complete");
 
   const form = useAppForm({
     defaultValues: {
@@ -41,17 +36,26 @@ export function ImportGitRepoDialog({
       onChange: importSchema,
     },
     onSubmit: ({ value }) => {
-      onSubmit({
-        url: value.url,
-        branch: value.branch || undefined,
-      });
+      importFromGitRepo.mutate(
+        {
+          url: value.url,
+          branch: value.branch || undefined,
+        },
+        {
+          onSuccess: () => {
+            form.reset();
+            closeDialog();
+          },
+          onError: (err) => console.error("Failed to import from git repo:", err.message),
+        },
+      );
     },
   });
 
   function handleClose() {
     if (isImporting) return;
     form.reset();
-    onClose();
+    closeDialog();
   }
 
   return (

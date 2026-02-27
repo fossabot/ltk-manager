@@ -1,27 +1,34 @@
+import { useNavigate } from "@tanstack/react-router";
 import { LuTriangleAlert } from "react-icons/lu";
 
 import { Button, Dialog } from "@/components";
-import type { WorkshopProject } from "@/lib/tauri";
+import { useWorkshopDialogsStore } from "@/stores";
 
-interface DeleteConfirmDialogProps {
-  open: boolean;
-  project: WorkshopProject | null;
-  onClose: () => void;
-  onConfirm: () => void;
-  isPending?: boolean;
-}
+import { useDeleteProject } from "../api/useDeleteProject";
 
-export function DeleteConfirmDialog({
-  open,
-  project,
-  onClose,
-  onConfirm,
-  isPending,
-}: DeleteConfirmDialogProps) {
+export function DeleteConfirmDialog() {
+  const project = useWorkshopDialogsStore((s) => s.deleteProject);
+  const closeDialog = useWorkshopDialogsStore((s) => s.closeDeleteDialog);
+  const deleteProject = useDeleteProject();
+  const navigate = useNavigate();
+
+  const open = project !== null;
+
+  function handleConfirm() {
+    if (!project) return;
+    deleteProject.mutate(project.path, {
+      onSuccess: () => {
+        closeDialog();
+        navigate({ to: "/workshop" });
+      },
+      onError: (err) => console.error("Failed to delete project:", err.message),
+    });
+  }
+
   if (!project) return null;
 
   return (
-    <Dialog.Root open={open} onOpenChange={(open) => !open && onClose()}>
+    <Dialog.Root open={open} onOpenChange={(open) => !open && closeDialog()}>
       <Dialog.Portal>
         <Dialog.Backdrop />
         <Dialog.Overlay>
@@ -47,13 +54,13 @@ export function DeleteConfirmDialog({
           </Dialog.Body>
 
           <Dialog.Footer>
-            <Button variant="ghost" onClick={onClose}>
+            <Button variant="ghost" onClick={closeDialog}>
               Cancel
             </Button>
             <Button
               variant="filled"
-              onClick={onConfirm}
-              loading={isPending}
+              onClick={handleConfirm}
+              loading={deleteProject.isPending}
               className="bg-red-600 hover:bg-red-500"
             >
               Delete Project

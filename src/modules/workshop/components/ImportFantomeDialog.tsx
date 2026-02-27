@@ -3,7 +3,10 @@ import { z } from "zod";
 
 import { Button, Dialog } from "@/components";
 import { useAppForm } from "@/lib/form";
-import type { FantomeImportProgress, FantomePeekResult, ImportFantomeArgs } from "@/lib/tauri";
+import { useWorkshopDialogsStore } from "@/stores";
+
+import { useFantomeImportProgress } from "../api/useFantomeImportProgress";
+import { useImportFromFantome } from "../api/useImportFromFantome";
 
 const importSchema = z.object({
   name: z
@@ -17,26 +20,17 @@ const importSchema = z.object({
   displayName: z.string().min(1, "Display name is required"),
 });
 
-interface ImportFantomeDialogProps {
-  open: boolean;
-  filePath: string | null;
-  peekResult: FantomePeekResult | null;
-  progress: FantomeImportProgress | null;
-  onClose: () => void;
-  onSubmit: (args: ImportFantomeArgs) => void;
-  isPending: boolean;
-}
+export function ImportFantomeDialog() {
+  const fantomeImport = useWorkshopDialogsStore((s) => s.fantomeImport);
+  const closeDialog = useWorkshopDialogsStore((s) => s.closeFantomeImportDialog);
+  const importFromFantome = useImportFromFantome();
+  const progress = useFantomeImportProgress();
 
-export function ImportFantomeDialog({
-  open,
-  filePath,
-  peekResult,
-  progress,
-  onClose,
-  onSubmit,
-  isPending,
-}: ImportFantomeDialogProps) {
-  const isImporting = isPending || (progress !== null && progress.stage !== "complete");
+  const open = fantomeImport !== null;
+  const peekResult = fantomeImport?.peekResult ?? null;
+  const filePath = fantomeImport?.filePath ?? null;
+  const isImporting =
+    importFromFantome.isPending || (progress !== null && progress.stage !== "complete");
 
   const form = useAppForm({
     defaultValues: {
@@ -48,11 +42,20 @@ export function ImportFantomeDialog({
     },
     onSubmit: ({ value }) => {
       if (!filePath) return;
-      onSubmit({
-        filePath,
-        name: value.name,
-        displayName: value.displayName,
-      });
+      importFromFantome.mutate(
+        {
+          filePath,
+          name: value.name,
+          displayName: value.displayName,
+        },
+        {
+          onSuccess: () => {
+            form.reset();
+            closeDialog();
+          },
+          onError: (err) => console.error("Failed to import fantome:", err.message),
+        },
+      );
     },
   });
 
@@ -68,7 +71,7 @@ export function ImportFantomeDialog({
   function handleClose() {
     if (isImporting) return;
     form.reset();
-    onClose();
+    closeDialog();
   }
 
   return (

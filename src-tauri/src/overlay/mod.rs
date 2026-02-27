@@ -33,7 +33,14 @@ pub struct OverlayProgress {
 /// Ensure the overlay exists and is up-to-date for the current enabled mod set.
 ///
 /// Returns the overlay root directory (the prefix passed to the legacy patcher).
-pub fn ensure_overlay(library: &ModLibrary, settings: &Settings) -> AppResult<PathBuf> {
+///
+/// Workshop project paths (if any) are loaded via `FsModContent` and prepended
+/// to the enabled mod list so they take highest priority.
+pub fn ensure_overlay(
+    library: &ModLibrary,
+    settings: &Settings,
+    workshop_project_paths: &[PathBuf],
+) -> AppResult<PathBuf> {
     let storage_dir = library.storage_dir(settings)?;
 
     let game_dir = resolve_game_dir(settings)?;
@@ -101,7 +108,24 @@ pub fn ensure_overlay(library: &ModLibrary, settings: &Settings) -> AppResult<Pa
                 );
             });
 
-    builder.set_enabled_mods(enabled_mods);
+    let mut all_mods = Vec::new();
+    for project_path in workshop_project_paths {
+        let utf8_path = Utf8PathBuf::from_path_buf(project_path.clone()).map_err(|p| {
+            AppError::Other(format!("Non-UTF-8 workshop project path: {}", p.display()))
+        })?;
+        let dir_name = project_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown");
+        let id = format!("workshop:{}", dir_name);
+        tracing::info!("Adding workshop project: id={}, path={}", id, utf8_path);
+        all_mods.push(ltk_overlay::EnabledMod {
+            id,
+            content: Box::new(ltk_overlay::FsModContent::new(utf8_path)),
+        });
+    }
+    all_mods.extend(enabled_mods);
+    builder.set_enabled_mods(all_mods);
 
     builder
         .build()

@@ -1,4 +1,4 @@
-import { createFileRoute, Link, Outlet, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
 import { LuArrowLeft } from "react-icons/lu";
 
 import { Button, NavTabs } from "@/components";
@@ -8,7 +8,6 @@ import {
   PackDialog,
   ProjectHeader,
   ProjectProvider,
-  useProjectActions,
   useWorkshopProjects,
 } from "@/modules/workshop";
 
@@ -18,12 +17,9 @@ export const Route = createFileRoute("/workshop/$projectName")({
 
 function ProjectDetailLayout() {
   const { projectName } = Route.useParams();
-  const navigate = useNavigate();
 
   const { data: projects, isLoading } = useWorkshopProjects();
   const project = projects?.find((p) => p.name === projectName);
-
-  const actions = useProjectActions(project, navigate);
 
   if (isLoading) {
     return <LoadingState />;
@@ -51,12 +47,7 @@ function ProjectDetailLayout() {
   return (
     <ProjectProvider project={project}>
       <div className="flex h-full flex-col">
-        <ProjectHeader
-          project={project}
-          onPack={actions.handleOpenPackDialog}
-          onDelete={actions.openDeleteDialog}
-          onOpenLocation={actions.handleOpenLocation}
-        />
+        <ProjectHeader project={project} />
 
         <NavTabs tabs={tabs} />
 
@@ -65,24 +56,8 @@ function ProjectDetailLayout() {
         </div>
       </div>
 
-      <PackDialog
-        open={actions.packDialogOpen}
-        project={project}
-        validation={actions.validation}
-        validationLoading={actions.validationLoading}
-        onClose={actions.handleClosePackDialog}
-        onPack={actions.handlePack}
-        isPacking={actions.isPacking}
-        packResult={actions.packResult}
-      />
-
-      <DeleteConfirmDialog
-        open={actions.deleteDialogOpen}
-        project={project}
-        onClose={actions.closeDeleteDialog}
-        onConfirm={actions.handleDeleteProject}
-        isPending={actions.isDeleting}
-      />
+      <PackDialog />
+      <DeleteConfirmDialog />
     </ProjectProvider>
   );
 }

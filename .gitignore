@@ -26,6 +26,9 @@ target/
 **/*.rs.bk
 *.pdb
 
+# ts-rs default output (real bindings go to src/lib/bindings/)
+src-tauri/bindings/
+
 # AI local settings
 .claude/
 .mcp.json
