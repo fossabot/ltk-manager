@@ -4,6 +4,7 @@ export * from "./Checkbox";
 export * from "./Combobox";
 export * from "./Dialog";
 export * from "./FormField";
+export * from "./Icon";
 export * from "./Menu";
 export * from "./MultiSelect";
 export * from "./NavTabs";

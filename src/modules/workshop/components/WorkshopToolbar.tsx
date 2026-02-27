@@ -1,3 +1,4 @@
+import { open } from "@tauri-apps/plugin-dialog";
 import {
   LuChevronDown,
   LuDownload,
@@ -8,69 +9,105 @@ import {
   LuPackage,
   LuPlus,
   LuSearch,
+  LuSquareCheckBig,
 } from "react-icons/lu";
 
 import { Button, IconButton, Menu } from "@/components";
+import { usePatcherStatus } from "@/modules/patcher";
+import { useWorkshopDialogsStore, useWorkshopSelectionStore, useWorkshopViewStore } from "@/stores";
+
+import { useFilteredProjects } from "../api/useFilteredProjects";
+import { useImportFromModpkg } from "../api/useImportFromModpkg";
+import { usePeekFantome } from "../api/usePeekFantome";
 
 export type ViewMode = "grid" | "list";
 
-interface WorkshopToolbarProps {
-  searchQuery: string;
-  onSearchChange: (query: string) => void;
-  viewMode: ViewMode;
-  onViewModeChange: (mode: ViewMode) => void;
-  onImportModpkg: () => void;
-  onImportFantome: () => void;
-  onImportGitRepo: () => void;
-  onNewProject: () => void;
-  isImporting?: boolean;
-}
+export function WorkshopToolbar() {
+  const searchQuery = useWorkshopViewStore((s) => s.searchQuery);
+  const setSearchQuery = useWorkshopViewStore((s) => s.setSearchQuery);
+  const viewMode = useWorkshopViewStore((s) => s.viewMode);
+  const setViewMode = useWorkshopViewStore((s) => s.setViewMode);
 
-export function WorkshopToolbar({
-  searchQuery,
-  onSearchChange,
-  viewMode,
-  onViewModeChange,
-  onImportModpkg,
-  onImportFantome,
-  onImportGitRepo,
-  onNewProject,
-  isImporting,
-}: WorkshopToolbarProps) {
+  const selectAll = useWorkshopSelectionStore((s) => s.selectAll);
+  const filteredProjects = useFilteredProjects();
+
+  const { data: patcherStatus } = usePatcherStatus();
+  const isPatcherActive = patcherStatus?.running ?? false;
+
+  const openNewProjectDialog = useWorkshopDialogsStore((s) => s.openNewProjectDialog);
+  const openFantomeImportDialog = useWorkshopDialogsStore((s) => s.openFantomeImportDialog);
+  const openGitImportDialog = useWorkshopDialogsStore((s) => s.openGitImportDialog);
+
+  const importFromModpkg = useImportFromModpkg();
+  const peekFantome = usePeekFantome();
+
+  const isImporting = importFromModpkg.isPending || peekFantome.isPending;
+
+  async function handleImportModpkg() {
+    const file = await open({
+      multiple: false,
+      filters: [{ name: "Mod Package", extensions: ["modpkg"] }],
+    });
+    if (file) {
+      importFromModpkg.mutate(file, {
+        onError: (err) => console.error("Failed to import modpkg:", err.message),
+      });
+    }
+  }
+
+  async function handleImportFantome() {
+    const file = await open({
+      multiple: false,
+      filters: [{ name: "Fantome Archive", extensions: ["fantome", "zip"] }],
+    });
+    if (!file) return;
+
+    peekFantome.mutate(file, {
+      onSuccess: (result) => openFantomeImportDialog(result, file),
+      onError: (err) => console.error("Failed to peek fantome:", err.message),
+    });
+  }
+
   return (
     <div
       className="flex items-center gap-4 border-b border-surface-600 px-4 py-3"
       data-tauri-drag-region
     >
-      {/* Search */}
       <div className="relative flex-1">
         <LuSearch className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-surface-500" />
         <input
           type="text"
           placeholder="Search projects..."
           value={searchQuery}
-          onChange={(e) => onSearchChange(e.target.value)}
+          onChange={(e) => setSearchQuery(e.target.value)}
           className="w-full rounded-lg border border-surface-600 bg-surface-800 py-2 pr-4 pl-10 text-surface-100 placeholder:text-surface-500 focus:border-transparent focus:ring-2 focus:ring-brand-500 focus:outline-none"
         />
       </div>
 
-      {/* View toggle */}
       <div className="flex items-center gap-1">
         <IconButton
           icon={<LuGrid3X3 className="h-4 w-4" />}
           variant={viewMode === "grid" ? "default" : "ghost"}
           size="sm"
-          onClick={() => onViewModeChange("grid")}
+          onClick={() => setViewMode("grid")}
         />
         <IconButton
           icon={<LuList className="h-4 w-4" />}
           variant={viewMode === "list" ? "default" : "ghost"}
           size="sm"
-          onClick={() => onViewModeChange("list")}
+          onClick={() => setViewMode("list")}
         />
       </div>
 
-      {/* Actions */}
+      {!isPatcherActive && (
+        <IconButton
+          icon={<LuSquareCheckBig className="h-4 w-4" />}
+          variant="ghost"
+          size="sm"
+          onClick={() => selectAll(filteredProjects.map((p) => p.path))}
+        />
+      )}
+
       <Menu.Root>
         <Menu.Trigger
           render={
@@ -88,13 +125,13 @@ export function WorkshopToolbar({
         <Menu.Portal>
           <Menu.Positioner>
             <Menu.Popup>
-              <Menu.Item icon={<LuFileArchive className="h-4 w-4" />} onClick={onImportFantome}>
+              <Menu.Item icon={<LuFileArchive className="h-4 w-4" />} onClick={handleImportFantome}>
                 From Fantome
               </Menu.Item>
-              <Menu.Item icon={<LuPackage className="h-4 w-4" />} onClick={onImportModpkg}>
+              <Menu.Item icon={<LuPackage className="h-4 w-4" />} onClick={handleImportModpkg}>
                 From Modpkg
               </Menu.Item>
-              <Menu.Item icon={<LuGitBranch className="h-4 w-4" />} onClick={onImportGitRepo}>
+              <Menu.Item icon={<LuGitBranch className="h-4 w-4" />} onClick={openGitImportDialog}>
                 From Git Repository
               </Menu.Item>
             </Menu.Popup>
@@ -104,7 +141,7 @@ export function WorkshopToolbar({
       <Button
         variant="filled"
         size="sm"
-        onClick={onNewProject}
+        onClick={openNewProjectDialog}
         left={<LuPlus className="h-4 w-4" />}
       >
         New Project

@@ -18,4 +18,11 @@ export type PatcherConfig = {
    * If not provided, defaults to 0 (equivalent to `--opts:none` in cslol-tools).
    */
   flags?: number;
+  /**
+   * Absolute paths to workshop project directories to include in the overlay.
+   *
+   * These are loaded directly from disk via `FsModContent` and prepended to
+   * the enabled mod list (highest priority).
+   */
+  workshopProjects?: Array<string>;
 };

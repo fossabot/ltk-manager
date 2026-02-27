@@ -3,30 +3,42 @@ import { useState } from "react";
 import { LuCheck, LuCircleAlert, LuFolderOpen, LuPackage, LuTriangleAlert } from "react-icons/lu";
 
 import { Button, Dialog, RadioGroup } from "@/components";
-import type { PackResult, ValidationResult, WorkshopProject } from "@/lib/tauri";
+import type { PackResult } from "@/lib/tauri";
+import { useWorkshopDialogsStore } from "@/stores";
 
-interface PackDialogProps {
-  open: boolean;
-  project: WorkshopProject | null;
-  validation: ValidationResult | null;
-  validationLoading: boolean;
-  onClose: () => void;
-  onPack: (format: "modpkg" | "fantome") => void;
-  isPacking: boolean;
-  packResult: PackResult | null;
-}
+import { usePackProject } from "../api/usePackProject";
+import { useValidateProject } from "../api/useValidateProject";
 
-export function PackDialog({
-  open,
-  project,
-  validation,
-  validationLoading,
-  onClose,
-  onPack,
-  isPacking,
-  packResult,
-}: PackDialogProps) {
+export function PackDialog() {
+  const project = useWorkshopDialogsStore((s) => s.packProject);
+  const closeDialog = useWorkshopDialogsStore((s) => s.closePackDialog);
+
+  const open = project !== null;
+
+  const packProject = usePackProject();
+  const { data: validation, isLoading: validationLoading } = useValidateProject(
+    project?.path ?? "",
+    open,
+  );
+
   const [format, setFormat] = useState<"modpkg" | "fantome">("modpkg");
+  const [packResult, setPackResult] = useState<PackResult | null>(null);
+
+  function handlePack() {
+    if (!project) return;
+    packProject.mutate(
+      { projectPath: project.path, format },
+      {
+        onSuccess: setPackResult,
+        onError: (err) => console.error("Failed to pack project:", err.message),
+      },
+    );
+  }
+
+  function handleClose() {
+    closeDialog();
+    setPackResult(null);
+  }
 
   if (!project) return null;
 
@@ -34,7 +46,7 @@ export function PackDialog({
   const hasWarnings = validation && validation.warnings.length > 0;
 
   return (
-    <Dialog.Root open={open} onOpenChange={(open) => !open && onClose()}>
+    <Dialog.Root open={open} onOpenChange={(open) => !open && handleClose()}>
       <Dialog.Portal>
         <Dialog.Backdrop />
         <Dialog.Overlay size="lg">
@@ -143,7 +155,7 @@ export function PackDialog({
           <Dialog.Footer>
             {packResult ? (
               <>
-                <Button variant="ghost" onClick={onClose}>
+                <Button variant="ghost" onClick={handleClose}>
                   Close
                 </Button>
                 <Button
@@ -162,17 +174,17 @@ export function PackDialog({
               </>
             ) : (
               <>
-                <Button variant="ghost" onClick={onClose}>
+                <Button variant="ghost" onClick={handleClose}>
                   Cancel
                 </Button>
                 <Button
                   variant="filled"
                   left={<LuPackage className="h-4 w-4" />}
-                  onClick={() => onPack(format)}
-                  loading={isPacking}
+                  onClick={handlePack}
+                  loading={packProject.isPending}
                   disabled={hasErrors || validationLoading}
                 >
-                  {isPacking ? "Packing..." : "Pack"}
+                  {packProject.isPending ? "Packing..." : "Pack"}
                 </Button>
               </>
             )}

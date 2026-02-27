@@ -1,8 +1,12 @@
 import { Link } from "@tanstack/react-router";
+import { open } from "@tauri-apps/plugin-dialog";
 import { LuDownload, LuFolderOpen, LuHammer, LuPlus, LuSearch, LuSettings } from "react-icons/lu";
 
 import { Button } from "@/components";
 import type { AppError } from "@/lib/tauri";
+import { useWorkshopDialogsStore } from "@/stores";
+
+import { useImportFromModpkg } from "../api/useImportFromModpkg";
 
 export function LoadingState() {
   return (
@@ -51,12 +55,22 @@ export function NotConfiguredState() {
   );
 }
 
-interface NoProjectsStateProps {
-  onCreate: () => void;
-  onImport: () => void;
-}
+export function NoProjectsState() {
+  const openNewProjectDialog = useWorkshopDialogsStore((s) => s.openNewProjectDialog);
+  const importFromModpkg = useImportFromModpkg();
 
-export function NoProjectsState({ onCreate, onImport }: NoProjectsStateProps) {
+  async function handleImport() {
+    const file = await open({
+      multiple: false,
+      filters: [{ name: "Mod Package", extensions: ["modpkg"] }],
+    });
+    if (file) {
+      importFromModpkg.mutate(file, {
+        onError: (err) => console.error("Failed to import modpkg:", err.message),
+      });
+    }
+  }
+
   return (
     <div className="flex h-64 flex-col items-center justify-center text-center">
       <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-2xl">
@@ -67,10 +81,14 @@ export function NoProjectsState({ onCreate, onImport }: NoProjectsStateProps) {
         Create a new project or import an existing mod package
       </p>
       <div className="flex gap-3">
-        <Button variant="outline" onClick={onImport} left={<LuDownload className="h-4 w-4" />}>
+        <Button variant="outline" onClick={handleImport} left={<LuDownload className="h-4 w-4" />}>
           Import
         </Button>
-        <Button variant="filled" onClick={onCreate} left={<LuPlus className="h-4 w-4" />}>
+        <Button
+          variant="filled"
+          onClick={openNewProjectDialog}
+          left={<LuPlus className="h-4 w-4" />}
+        >
           New Project
         </Button>
       </div>

@@ -31,6 +31,12 @@ pub struct PatcherConfig {
     /// If not provided, defaults to 0 (equivalent to `--opts:none` in cslol-tools).
     #[ts(optional, type = "number")]
     pub flags: Option<u64>,
+    /// Absolute paths to workshop project directories to include in the overlay.
+    ///
+    /// These are loaded directly from disk via `FsModContent` and prepended to
+    /// the enabled mod list (highest priority).
+    #[ts(optional)]
+    pub workshop_projects: Option<Vec<String>>,
 }
 
 /// Current status of the patcher.
@@ -151,6 +157,13 @@ fn start_patcher_inner(
     let log_file = config.log_file.clone();
     let timeout_ms = config.timeout_ms.unwrap_or(DEFAULT_HOOK_TIMEOUT_MS);
     let flags = config.flags.unwrap_or(0);
+    let workshop_paths: Vec<PathBuf> = config
+        .workshop_projects
+        .unwrap_or_default()
+        .iter()
+        .map(PathBuf::from)
+        .collect();
+
     let settings_snapshot = settings.0.lock().mutex_err()?.clone();
 
     tracing::info!(
@@ -171,20 +184,21 @@ fn start_patcher_inner(
 
     let handle = thread::spawn(move || {
         // Phase 1: Build overlay (the slow part)
-        let overlay_root = match overlay::ensure_overlay(&library_clone, &settings_snapshot) {
-            Ok(root) => root,
-            Err(e) => {
-                tracing::error!(error = ?e, "Overlay build failed");
-                let error_response: AppErrorResponse = e.into();
-                let _ = library_clone
-                    .app_handle()
-                    .emit("patcher-error", &error_response);
-                if let Ok(mut s) = state_arc.lock() {
-                    s.phase = PatcherPhase::Idle;
+        let overlay_root =
+            match overlay::ensure_overlay(&library_clone, &settings_snapshot, &workshop_paths) {
+                Ok(root) => root,
+                Err(e) => {
+                    tracing::error!(error = ?e, "Overlay build failed");
+                    let error_response: AppErrorResponse = e.into();
+                    let _ = library_clone
+                        .app_handle()
+                        .emit("patcher-error", &error_response);
+                    if let Ok(mut s) = state_arc.lock() {
+                        s.phase = PatcherPhase::Idle;
+                    }
+                    return;
                 }
-                return;
-            }
-        };
+            };
 
         // Check stop flag between build and patcher loop
         if stop_flag.load(Ordering::SeqCst) {

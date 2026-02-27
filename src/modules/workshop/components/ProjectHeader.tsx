@@ -1,17 +1,28 @@
 import { Link } from "@tanstack/react-router";
-import { LuArrowLeft, LuEllipsisVertical, LuFolderOpen, LuPackage, LuTrash2 } from "react-icons/lu";
+import {
+  LuArrowLeft,
+  LuEllipsisVertical,
+  LuFolderOpen,
+  LuPackage,
+  LuPlay,
+  LuTrash2,
+} from "react-icons/lu";
 
 import { Button, IconButton, Menu } from "@/components";
 import type { WorkshopProject } from "@/lib/tauri";
+import { usePatcherStatus } from "@/modules/patcher";
+
+import { useProjectActions } from "../api/useProjectActions";
 
 interface ProjectHeaderProps {
   project: WorkshopProject;
-  onPack: () => void;
-  onDelete: () => void;
-  onOpenLocation: () => void;
 }
 
-export function ProjectHeader({ project, onPack, onDelete, onOpenLocation }: ProjectHeaderProps) {
+export function ProjectHeader({ project }: ProjectHeaderProps) {
+  const { data: patcherStatus } = usePatcherStatus();
+  const isPatcherActive = patcherStatus?.running ?? false;
+  const actions = useProjectActions(project);
+
   return (
     <div className="flex items-center gap-3 border-b border-surface-700 px-6 py-3">
       <Link to="/workshop">
@@ -36,8 +47,17 @@ export function ProjectHeader({ project, onPack, onDelete, onOpenLocation }: Pro
         <Button
           variant="outline"
           size="sm"
+          left={<LuPlay className="h-4 w-4" />}
+          onClick={actions.handleTestProject}
+          disabled={isPatcherActive}
+        >
+          Test
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
           left={<LuPackage className="h-4 w-4" />}
-          onClick={onPack}
+          onClick={actions.handleOpenPackDialog}
         >
           Pack
         </Button>
@@ -54,14 +74,17 @@ export function ProjectHeader({ project, onPack, onDelete, onOpenLocation }: Pro
           <Menu.Portal>
             <Menu.Positioner>
               <Menu.Popup>
-                <Menu.Item icon={<LuFolderOpen className="h-4 w-4" />} onClick={onOpenLocation}>
+                <Menu.Item
+                  icon={<LuFolderOpen className="h-4 w-4" />}
+                  onClick={actions.handleOpenLocation}
+                >
                   Open Location
                 </Menu.Item>
                 <Menu.Separator />
                 <Menu.Item
                   icon={<LuTrash2 className="h-4 w-4" />}
                   variant="danger"
-                  onClick={onDelete}
+                  onClick={actions.handleOpenDeleteDialog}
                 >
                   Delete
                 </Menu.Item>

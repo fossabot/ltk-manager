@@ -1,17 +1,16 @@
 import type { WorkshopProject } from "@/lib/tauri";
+import { useWorkshopViewStore } from "@/stores";
 
 import { ProjectCard } from "./ProjectCard";
-import type { ViewMode } from "./WorkshopToolbar";
 
 interface ProjectGridProps {
   projects: WorkshopProject[];
-  viewMode: ViewMode;
   onEdit: (project: WorkshopProject) => void;
-  onPack: (project: WorkshopProject) => void;
-  onDelete: (project: WorkshopProject) => void;
 }
 
-export function ProjectGrid({ projects, viewMode, onEdit, onPack, onDelete }: ProjectGridProps) {
+export function ProjectGrid({ projects, onEdit }: ProjectGridProps) {
+  const viewMode = useWorkshopViewStore((s) => s.viewMode);
+
   return (
     <div
       className={
@@ -21,14 +20,7 @@ export function ProjectGrid({ projects, viewMode, onEdit, onPack, onDelete }: Pr
       }
     >
       {projects.map((project) => (
-        <ProjectCard
-          key={project.path}
-          project={project}
-          viewMode={viewMode}
-          onEdit={onEdit}
-          onPack={onPack}
-          onDelete={onDelete}
-        />
+        <ProjectCard key={project.path} project={project} viewMode={viewMode} onEdit={onEdit} />
       ))}
     </div>
   );

@@ -72,6 +72,27 @@ const spinnerSizeClasses: Record<ButtonSize, string> = {
   xl: "text-2xl",
 };
 
+const iconSlotSizeClasses: Record<ButtonSize, string> = {
+  xs: "h-3 w-3",
+  sm: "h-4 w-4",
+  md: "h-4 w-4",
+  lg: "h-5 w-5",
+  xl: "h-5 w-5",
+};
+
+function IconSlot({ children, size }: { children: ReactNode; size: ButtonSize }) {
+  return (
+    <span
+      className={twMerge(
+        "inline-flex shrink-0 items-center justify-center",
+        iconSlotSizeClasses[size],
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   (
     {
@@ -107,12 +128,12 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
           {children && <span className="opacity-0">{children}</span>}
         </>
       ))
-      .with([false, true], () => icon)
+      .with([false, true], () => <IconSlot size={size}>{icon}</IconSlot>)
       .with([false, false], () => (
         <>
-          {leftIcon}
+          {leftIcon && <IconSlot size={size}>{leftIcon}</IconSlot>}
           {children}
-          {rightIcon}
+          {rightIcon && <IconSlot size={size}>{rightIcon}</IconSlot>}
         </>
       ))
       .exhaustive();

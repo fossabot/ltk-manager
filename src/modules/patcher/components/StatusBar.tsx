@@ -1,7 +1,9 @@
+import { useEffect, useRef } from "react";
 import { LuLoader, LuSquare } from "react-icons/lu";
 
 import { Button, Progress } from "@/components";
 import type { OverlayProgress } from "@/lib/tauri";
+import { usePatcherSessionStore } from "@/stores";
 
 import { useOverlayProgress, usePatcherError, usePatcherStatus, useStopPatcher } from "../api";
 
@@ -23,11 +25,32 @@ export function StatusBar() {
   const stopPatcher = useStopPatcher();
   usePatcherError();
 
+  const testingProjects = usePatcherSessionStore((s) => s.testingProjects);
+  const clearTestingProjects = usePatcherSessionStore((s) => s.clearTestingProjects);
+
   const isBuilding = patcherStatus?.phase === "building";
   const isRunning = patcherStatus?.running ?? false;
+  const isIdle = !isRunning && !isBuilding;
 
-  // Hide when idle
-  if (!isRunning && !isBuilding) return null;
+  const wasActiveRef = useRef(false);
+
+  useEffect(() => {
+    if (!isIdle) {
+      wasActiveRef.current = true;
+    } else if (wasActiveRef.current && testingProjects.length > 0) {
+      clearTestingProjects();
+      wasActiveRef.current = false;
+    }
+  }, [isIdle, testingProjects, clearTestingProjects]);
+
+  if (isIdle) return null;
+
+  const testLabel =
+    testingProjects.length === 1
+      ? `Testing ${testingProjects[0].displayName}`
+      : testingProjects.length > 1
+        ? `Testing ${testingProjects.length} projects`
+        : null;
 
   // Building overlay — show full progress
   if (isBuilding) {
@@ -48,6 +71,11 @@ export function StatusBar() {
         <div className="flex items-center gap-3">
           <LuLoader className="h-4 w-4 shrink-0 animate-spin text-brand-500" />
           <span className="shrink-0 text-sm font-medium text-brand-500">Building Overlay</span>
+          {testLabel && (
+            <span className="shrink-0 rounded-full bg-brand-500/10 px-2 py-0.5 text-xs font-medium text-brand-400">
+              {testLabel}
+            </span>
+          )}
           <span className="text-sm text-surface-300">{label}</span>
           <div className="flex-1" />
           {counter && (
@@ -72,7 +100,7 @@ export function StatusBar() {
   return (
     <div className="animate-in slide-in-from-bottom-2 flex items-center border-t-2 border-green-500 bg-surface-950 px-4 py-2">
       <span className="mr-2 h-2 w-2 shrink-0 animate-pulse rounded-full bg-green-500" />
-      <span className="text-sm font-medium text-green-500">Patcher running</span>
+      <span className="text-sm font-medium text-green-500">{testLabel ?? "Patcher running"}</span>
       <div className="flex-1" />
       <Button
         variant="ghost"
