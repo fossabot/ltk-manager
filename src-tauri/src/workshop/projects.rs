@@ -791,3 +791,112 @@ fn extract_fantome_file<R: Read + Seek>(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use assert_matches::assert_matches;
+
+    // ── parse_github_url ──
+
+    #[test]
+    fn parse_github_url_valid_https() {
+        let (owner, repo) = parse_github_url("https://github.com/owner/repo").unwrap();
+        assert_eq!(owner, "owner");
+        assert_eq!(repo, "repo");
+    }
+
+    #[test]
+    fn parse_github_url_trailing_slash() {
+        let (owner, repo) = parse_github_url("https://github.com/owner/repo/").unwrap();
+        assert_eq!(owner, "owner");
+        assert_eq!(repo, "repo");
+    }
+
+    #[test]
+    fn parse_github_url_with_git_suffix() {
+        let (owner, repo) = parse_github_url("https://github.com/owner/repo.git").unwrap();
+        assert_eq!(owner, "owner");
+        assert_eq!(repo, "repo");
+    }
+
+    #[test]
+    fn parse_github_url_with_whitespace() {
+        let (owner, repo) = parse_github_url("  https://github.com/owner/repo  ").unwrap();
+        assert_eq!(owner, "owner");
+        assert_eq!(repo, "repo");
+    }
+
+    #[test]
+    fn parse_github_url_http_also_works() {
+        let (owner, repo) = parse_github_url("http://github.com/owner/repo").unwrap();
+        assert_eq!(owner, "owner");
+        assert_eq!(repo, "repo");
+    }
+
+    #[test]
+    fn parse_github_url_non_github_host_rejected() {
+        let result = parse_github_url("https://gitlab.com/owner/repo");
+        assert_matches!(result, Err(AppError::ValidationFailed(_)));
+    }
+
+    #[test]
+    fn parse_github_url_missing_repo() {
+        let result = parse_github_url("https://github.com/owner");
+        assert_matches!(result, Err(AppError::ValidationFailed(_)));
+    }
+
+    #[test]
+    fn parse_github_url_empty_string() {
+        let result = parse_github_url("");
+        assert_matches!(result, Err(AppError::ValidationFailed(_)));
+    }
+
+    #[test]
+    fn parse_github_url_extra_path_segments_rejected() {
+        let result = parse_github_url("https://github.com/owner/repo/tree/main");
+        assert_matches!(result, Err(AppError::ValidationFailed(_)));
+    }
+
+    #[test]
+    fn parse_github_url_trailing_slash_and_git() {
+        let (owner, repo) = parse_github_url("https://github.com/owner/repo.git/").unwrap();
+        assert_eq!(owner, "owner");
+        assert_eq!(repo, "repo");
+    }
+
+    // ── is_wad_file_name ──
+
+    #[test]
+    fn is_wad_file_name_client() {
+        assert!(is_wad_file_name("Aatrox.wad.client"));
+    }
+
+    #[test]
+    fn is_wad_file_name_plain() {
+        assert!(is_wad_file_name("Map1.wad"));
+    }
+
+    #[test]
+    fn is_wad_file_name_mobile() {
+        assert!(is_wad_file_name("Aatrox.wad.mobile"));
+    }
+
+    #[test]
+    fn is_wad_file_name_case_insensitive() {
+        assert!(is_wad_file_name("AATROX.WAD.CLIENT"));
+        assert!(is_wad_file_name("Map1.WAD"));
+    }
+
+    #[test]
+    fn is_wad_file_name_not_wad() {
+        assert!(!is_wad_file_name("readme.txt"));
+        assert!(!is_wad_file_name("mod.config.json"));
+        assert!(!is_wad_file_name("thumbnail.png"));
+    }
+
+    #[test]
+    fn is_wad_file_name_empty() {
+        assert!(!is_wad_file_name(""));
+    }
+}

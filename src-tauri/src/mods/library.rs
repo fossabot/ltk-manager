@@ -711,3 +711,345 @@ fn extract_modpkg_thumbnail(
         Err(_) => Ok(None),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use assert_matches::assert_matches;
+    use std::collections::HashMap;
+    use std::io::Write;
+
+    fn make_test_mod_config_json() -> String {
+        serde_json::to_string_pretty(&ltk_mod_project::ModProject {
+            name: "test-mod".to_string(),
+            display_name: "Test Mod".to_string(),
+            version: "1.0.0".to_string(),
+            description: "A test mod".to_string(),
+            authors: vec![ltk_mod_project::ModProjectAuthor::Name(
+                "Author".to_string(),
+            )],
+            license: None,
+            tags: Vec::new(),
+            champions: vec!["Aatrox".to_string()],
+            maps: Vec::new(),
+            transformers: Vec::new(),
+            layers: ltk_mod_project::default_layers(),
+            thumbnail: None,
+        })
+        .unwrap()
+    }
+
+    fn make_test_fantome_zip(dir: &Path, include_thumbnail: bool, include_readme: bool) -> PathBuf {
+        let info = ltk_fantome::FantomeInfo {
+            name: "Test Mod".to_string(),
+            author: "Author".to_string(),
+            version: "1.0.0".to_string(),
+            description: "Description".to_string(),
+            tags: Vec::new(),
+            champions: Vec::new(),
+            maps: Vec::new(),
+            layers: HashMap::new(),
+        };
+
+        let zip_path = dir.join("test.fantome");
+        let file = std::fs::File::create(&zip_path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default();
+
+        zip.start_file("META/info.json", options).unwrap();
+        zip.write_all(serde_json::to_string_pretty(&info).unwrap().as_bytes())
+            .unwrap();
+
+        if include_thumbnail {
+            zip.start_file("META/image.png", options).unwrap();
+            zip.write_all(b"fake png data").unwrap();
+        }
+
+        if include_readme {
+            zip.start_file("META/readme.md", options).unwrap();
+            zip.write_all(b"# Test Mod\nReadme content").unwrap();
+        }
+
+        zip.finish().unwrap();
+        zip_path
+    }
+
+    #[test]
+    fn load_mod_project_valid_json() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("mod.config.json"),
+            make_test_mod_config_json(),
+        )
+        .unwrap();
+        let project = load_mod_project(dir.path()).unwrap();
+        assert_eq!(project.name, "test-mod");
+        assert_eq!(project.version, "1.0.0");
+        assert_eq!(project.display_name, "Test Mod");
+    }
+
+    #[test]
+    fn load_mod_project_invalid_json() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("mod.config.json"), "not valid json").unwrap();
+        assert!(load_mod_project(dir.path()).is_err());
+    }
+
+    #[test]
+    fn load_mod_project_missing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(load_mod_project(dir.path()).is_err());
+    }
+
+    #[test]
+    fn read_installed_mod_populates_all_fields() {
+        let storage = tempfile::tempdir().unwrap();
+        let id = "test-id";
+        let mods_dir = storage.path().join("mods").join(id);
+        fs::create_dir_all(&mods_dir).unwrap();
+        fs::write(
+            mods_dir.join("mod.config.json"),
+            make_test_mod_config_json(),
+        )
+        .unwrap();
+
+        let entry = LibraryModEntry {
+            id: id.to_string(),
+            installed_at: Utc::now(),
+            format: ModArchiveFormat::Fantome,
+        };
+
+        let result = read_installed_mod(&entry, true, storage.path()).unwrap();
+        assert_eq!(result.id, id);
+        assert_eq!(result.name, "test-mod");
+        assert_eq!(result.display_name, "Test Mod");
+        assert_eq!(result.version, "1.0.0");
+        assert_eq!(result.description.as_deref(), Some("A test mod"));
+        assert_eq!(result.authors, vec!["Author"]);
+        assert!(result.enabled);
+        assert!(!result.layers.is_empty());
+        assert_eq!(result.champions, vec!["Aatrox"]);
+    }
+
+    #[test]
+    fn read_installed_mod_empty_description_becomes_none() {
+        let storage = tempfile::tempdir().unwrap();
+        let id = "test-id-2";
+        let mods_dir = storage.path().join("mods").join(id);
+        fs::create_dir_all(&mods_dir).unwrap();
+
+        let config = serde_json::to_string_pretty(&ltk_mod_project::ModProject {
+            name: "test-mod".to_string(),
+            display_name: "Test Mod".to_string(),
+            version: "1.0.0".to_string(),
+            description: "".to_string(),
+            authors: Vec::new(),
+            license: None,
+            tags: Vec::new(),
+            champions: Vec::new(),
+            maps: Vec::new(),
+            transformers: Vec::new(),
+            layers: ltk_mod_project::default_layers(),
+            thumbnail: None,
+        })
+        .unwrap();
+        fs::write(mods_dir.join("mod.config.json"), config).unwrap();
+
+        let entry = LibraryModEntry {
+            id: id.to_string(),
+            installed_at: Utc::now(),
+            format: ModArchiveFormat::Fantome,
+        };
+
+        let result = read_installed_mod(&entry, false, storage.path()).unwrap();
+        assert!(result.description.is_none());
+        assert!(!result.enabled);
+    }
+
+    #[test]
+    fn read_installed_mod_missing_config_returns_error() {
+        let storage = tempfile::tempdir().unwrap();
+        let entry = LibraryModEntry {
+            id: "nonexistent".to_string(),
+            installed_at: Utc::now(),
+            format: ModArchiveFormat::Fantome,
+        };
+        assert!(read_installed_mod(&entry, true, storage.path()).is_err());
+    }
+
+    #[test]
+    fn extract_fantome_thumbnail_with_image() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive_path = make_test_fantome_zip(dir.path(), true, false);
+        let metadata_dir = dir.path().join("metadata");
+        fs::create_dir_all(&metadata_dir).unwrap();
+
+        let result = extract_fantome_thumbnail(&archive_path, &metadata_dir).unwrap();
+        assert!(result.is_some());
+        assert!(result.unwrap().exists());
+    }
+
+    #[test]
+    fn extract_fantome_thumbnail_without_image() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive_path = make_test_fantome_zip(dir.path(), false, false);
+        let metadata_dir = dir.path().join("metadata");
+        fs::create_dir_all(&metadata_dir).unwrap();
+
+        let result = extract_fantome_thumbnail(&archive_path, &metadata_dir).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn extract_fantome_metadata_valid() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive_path = make_test_fantome_zip(dir.path(), false, false);
+        let metadata_dir = dir.path().join("metadata");
+        fs::create_dir_all(&metadata_dir).unwrap();
+
+        extract_fantome_metadata(&archive_path, &metadata_dir).unwrap();
+
+        let config_path = metadata_dir.join("mod.config.json");
+        assert!(config_path.exists());
+        let project = load_mod_project(&metadata_dir).unwrap();
+        assert_eq!(project.display_name, "Test Mod");
+    }
+
+    #[test]
+    fn extract_fantome_metadata_missing_info_json() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let zip_path = dir.path().join("empty.fantome");
+        let file = std::fs::File::create(&zip_path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default();
+        zip.start_file("WAD/test.wad.client/file.bin", options)
+            .unwrap();
+        zip.write_all(b"data").unwrap();
+        zip.finish().unwrap();
+
+        let metadata_dir = dir.path().join("metadata");
+        fs::create_dir_all(&metadata_dir).unwrap();
+
+        assert!(extract_fantome_metadata(&zip_path, &metadata_dir).is_err());
+    }
+
+    #[test]
+    fn extract_fantome_metadata_with_bom() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let info_json = format!(
+            "\u{feff}{}",
+            serde_json::to_string(&ltk_fantome::FantomeInfo {
+                name: "BOM Mod".to_string(),
+                author: "Author".to_string(),
+                version: "2.0.0".to_string(),
+                description: "Has BOM".to_string(),
+                tags: Vec::new(),
+                champions: Vec::new(),
+                maps: Vec::new(),
+                layers: HashMap::new(),
+            })
+            .unwrap()
+        );
+
+        let zip_path = dir.path().join("bom.fantome");
+        let file = std::fs::File::create(&zip_path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default();
+        zip.start_file("META/info.json", options).unwrap();
+        zip.write_all(info_json.as_bytes()).unwrap();
+        zip.finish().unwrap();
+
+        let metadata_dir = dir.path().join("metadata");
+        fs::create_dir_all(&metadata_dir).unwrap();
+
+        extract_fantome_metadata(&zip_path, &metadata_dir).unwrap();
+        let project = load_mod_project(&metadata_dir).unwrap();
+        assert_eq!(project.display_name, "BOM Mod");
+    }
+
+    #[test]
+    fn extract_fantome_metadata_extracts_readme() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive_path = make_test_fantome_zip(dir.path(), false, true);
+        let metadata_dir = dir.path().join("metadata");
+        fs::create_dir_all(&metadata_dir).unwrap();
+
+        extract_fantome_metadata(&archive_path, &metadata_dir).unwrap();
+        let readme = metadata_dir.join("README.md");
+        assert!(readme.exists());
+        let contents = fs::read_to_string(readme).unwrap();
+        assert!(contents.contains("Test Mod"));
+    }
+
+    #[test]
+    fn install_single_mod_to_index_missing_file() {
+        let storage = tempfile::tempdir().unwrap();
+        let mut index = LibraryIndex::default();
+        let result =
+            install_single_mod_to_index(storage.path(), &mut index, "/nonexistent/file.fantome");
+        assert_matches!(result, Err(AppError::InvalidPath(_)));
+    }
+
+    #[test]
+    fn install_single_mod_to_index_adds_to_index() {
+        let storage = tempfile::tempdir().unwrap();
+        let source = tempfile::tempdir().unwrap();
+        let archive_path = make_test_fantome_zip(source.path(), false, false);
+        let mut index = LibraryIndex::default();
+        assert!(index.mods.is_empty());
+
+        let (_entry, installed) =
+            install_single_mod_to_index(storage.path(), &mut index, archive_path.to_str().unwrap())
+                .unwrap();
+
+        assert_eq!(index.mods.len(), 1);
+        assert_eq!(installed.display_name, "Test Mod");
+        assert!(installed.enabled);
+
+        let profile = index
+            .profiles
+            .iter()
+            .find(|p| p.id == index.active_profile_id)
+            .unwrap();
+        assert_eq!(profile.mod_order[0], index.mods[0].id);
+        assert_eq!(profile.enabled_mods[0], index.mods[0].id);
+    }
+
+    #[test]
+    fn install_single_mod_format_detection_fantome() {
+        let storage = tempfile::tempdir().unwrap();
+        let source = tempfile::tempdir().unwrap();
+        let archive_path = make_test_fantome_zip(source.path(), false, false);
+        let mut index = LibraryIndex::default();
+
+        let (entry, _) =
+            install_single_mod_to_index(storage.path(), &mut index, archive_path.to_str().unwrap())
+                .unwrap();
+
+        assert_eq!(entry.format, ModArchiveFormat::Fantome);
+    }
+
+    #[test]
+    fn mod_archive_format_extension() {
+        assert_eq!(ModArchiveFormat::Fantome.extension(), "fantome");
+        assert_eq!(ModArchiveFormat::Modpkg.extension(), "modpkg");
+    }
+
+    #[test]
+    fn library_mod_entry_paths() {
+        let storage_dir = Path::new("/storage");
+        let entry = LibraryModEntry {
+            id: "abc-123".to_string(),
+            installed_at: Utc::now(),
+            format: ModArchiveFormat::Fantome,
+        };
+
+        let metadata_dir = entry.metadata_dir(storage_dir);
+        assert!(metadata_dir.ends_with("mods/abc-123"));
+
+        let archive_path = entry.archive_path(storage_dir);
+        assert!(archive_path.ends_with("archives/abc-123.fantome"));
+    }
+}

@@ -118,6 +118,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "assert_matches"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b34d609dfbaf33d6889b2b7106d3ca345eacad44200913df5ba02bfd31d2ba9"
+
+[[package]]
 name = "atk"
 version = "0.18.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2355,6 +2361,7 @@ name = "ltk-manager"
 version = "0.4.0"
 dependencies = [
  "anyhow",
+ "assert_matches",
  "byteorder",
  "camino",
  "chrono",
@@ -2381,6 +2388,7 @@ dependencies = [
  "tauri-plugin-process",
  "tauri-plugin-shell",
  "tauri-plugin-updater",
+ "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "toml 0.8.23",

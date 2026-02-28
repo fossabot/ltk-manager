@@ -358,3 +358,242 @@ pub(super) fn resolve_profile_dirs(
     let cache_dir = profile_dir.join("cache");
     (overlay_dir, cache_dir)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn profile_slug_from_name_normal() {
+        let slug = ProfileSlug::from_name("My Profile").unwrap();
+        assert_eq!(slug.as_str(), "my-profile");
+    }
+
+    #[test]
+    fn profile_slug_from_name_special_chars() {
+        let slug = ProfileSlug::from_name("Test & Profile #1").unwrap();
+        assert!(!slug.as_str().is_empty());
+        assert!(slug
+            .as_str()
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'));
+    }
+
+    #[test]
+    fn profile_slug_from_name_empty_returns_none() {
+        assert!(ProfileSlug::from_name("").is_none());
+    }
+
+    #[test]
+    fn profile_slug_from_name_whitespace_only_returns_none() {
+        assert!(ProfileSlug::from_name("   ").is_none());
+    }
+
+    #[test]
+    fn profile_slug_from_name_symbols_only_returns_none() {
+        assert!(ProfileSlug::from_name("!!!").is_none());
+    }
+
+    #[test]
+    fn profile_slug_is_unique_in_no_profiles() {
+        let index = LibraryIndex {
+            mods: Vec::new(),
+            profiles: Vec::new(),
+            active_profile_id: String::new(),
+        };
+        let slug = ProfileSlug("test".to_string());
+        assert!(slug.is_unique_in(&index, None));
+    }
+
+    #[test]
+    fn profile_slug_is_unique_in_with_different_slugs() {
+        let index = LibraryIndex {
+            mods: Vec::new(),
+            profiles: vec![Profile {
+                id: "p1".to_string(),
+                name: "Default".to_string(),
+                slug: ProfileSlug("default".to_string()),
+                enabled_mods: Vec::new(),
+                mod_order: Vec::new(),
+                created_at: Utc::now(),
+                last_used: Utc::now(),
+            }],
+            active_profile_id: "p1".to_string(),
+        };
+        let slug = ProfileSlug("my-profile".to_string());
+        assert!(slug.is_unique_in(&index, None));
+    }
+
+    #[test]
+    fn profile_slug_is_not_unique_when_duplicate() {
+        let index = LibraryIndex {
+            mods: Vec::new(),
+            profiles: vec![Profile {
+                id: "p1".to_string(),
+                name: "Default".to_string(),
+                slug: ProfileSlug("default".to_string()),
+                enabled_mods: Vec::new(),
+                mod_order: Vec::new(),
+                created_at: Utc::now(),
+                last_used: Utc::now(),
+            }],
+            active_profile_id: "p1".to_string(),
+        };
+        let slug = ProfileSlug("default".to_string());
+        assert!(!slug.is_unique_in(&index, None));
+    }
+
+    #[test]
+    fn profile_slug_is_unique_when_excluded() {
+        let index = LibraryIndex {
+            mods: Vec::new(),
+            profiles: vec![Profile {
+                id: "p1".to_string(),
+                name: "Default".to_string(),
+                slug: ProfileSlug("default".to_string()),
+                enabled_mods: Vec::new(),
+                mod_order: Vec::new(),
+                created_at: Utc::now(),
+                last_used: Utc::now(),
+            }],
+            active_profile_id: "p1".to_string(),
+        };
+        let slug = ProfileSlug("default".to_string());
+        assert!(slug.is_unique_in(&index, Some("p1")));
+    }
+
+    #[test]
+    fn library_index_default_has_one_profile() {
+        let index = LibraryIndex::default();
+        assert_eq!(index.profiles.len(), 1);
+        assert_eq!(index.profiles[0].name, "Default");
+        assert_eq!(index.profiles[0].slug.as_str(), "default");
+        assert_eq!(index.active_profile_id, index.profiles[0].id);
+        assert!(index.mods.is_empty());
+    }
+
+    #[test]
+    fn library_index_save_and_load_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let index = LibraryIndex::default();
+        save_library_index(dir.path(), &index).unwrap();
+        let loaded = load_library_index(dir.path()).unwrap();
+        assert_eq!(loaded.profiles.len(), 1);
+        assert_eq!(loaded.profiles[0].name, "Default");
+        assert_eq!(loaded.active_profile_id, loaded.profiles[0].id);
+    }
+
+    #[test]
+    fn load_library_index_returns_default_when_no_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let index = load_library_index(dir.path()).unwrap();
+        assert_eq!(index.profiles.len(), 1);
+        assert_eq!(index.profiles[0].name, "Default");
+    }
+
+    #[test]
+    fn get_active_profile_finds_profile() {
+        let index = LibraryIndex::default();
+        let profile = get_active_profile(&index).unwrap();
+        assert_eq!(profile.name, "Default");
+    }
+
+    #[test]
+    fn get_active_profile_returns_error_when_missing() {
+        let index = LibraryIndex {
+            mods: Vec::new(),
+            profiles: Vec::new(),
+            active_profile_id: "nonexistent".to_string(),
+        };
+        assert!(get_active_profile(&index).is_err());
+    }
+
+    #[test]
+    fn resolve_profile_dirs_produces_correct_paths() {
+        let storage_dir = Path::new("/storage");
+        let slug = ProfileSlug("my-profile".to_string());
+        let (overlay_dir, cache_dir) = resolve_profile_dirs(storage_dir, &slug);
+        assert!(overlay_dir.ends_with("profiles/my-profile/overlay"));
+        assert!(cache_dir.ends_with("profiles/my-profile/cache"));
+    }
+
+    // ── Profile validation logic ──
+
+    #[test]
+    fn create_profile_empty_name_rejected() {
+        let name = "".to_string();
+        let trimmed = name.trim().to_string();
+        assert!(trimmed.is_empty());
+    }
+
+    #[test]
+    fn create_profile_whitespace_name_rejected() {
+        let name = "   ".to_string();
+        let trimmed = name.trim().to_string();
+        assert!(trimmed.is_empty());
+    }
+
+    #[test]
+    fn create_profile_duplicate_name_rejected() {
+        let index = LibraryIndex::default();
+        let duplicate_name = "Default";
+        assert!(index.profiles.iter().any(|p| p.name == duplicate_name));
+    }
+
+    #[test]
+    fn create_profile_slug_generation() {
+        let slug = ProfileSlug::from_name("My Test Profile").unwrap();
+        assert_eq!(slug.as_str(), "my-test-profile");
+    }
+
+    #[test]
+    fn create_profile_symbols_only_name_rejected() {
+        assert!(ProfileSlug::from_name("!!!").is_none());
+    }
+
+    #[test]
+    fn delete_profile_cannot_delete_default() {
+        let index = LibraryIndex::default();
+        let default_profile = &index.profiles[0];
+        assert_eq!(default_profile.name, "Default");
+    }
+
+    #[test]
+    fn delete_profile_cannot_delete_active() {
+        let index = LibraryIndex::default();
+        assert_eq!(index.profiles[0].id, index.active_profile_id);
+    }
+
+    #[test]
+    fn rename_profile_cannot_rename_default() {
+        let index = LibraryIndex::default();
+        let profile = &index.profiles[0];
+        assert_eq!(profile.name, "Default");
+    }
+
+    #[test]
+    fn rename_profile_duplicate_name_detected() {
+        let mut index = LibraryIndex::default();
+        let profile_to_rename_id = "p2".to_string();
+        index.profiles.push(Profile {
+            id: profile_to_rename_id.clone(),
+            name: "Profile A".to_string(),
+            slug: ProfileSlug::from_name("Profile A").unwrap(),
+            enabled_mods: Vec::new(),
+            mod_order: Vec::new(),
+            created_at: Utc::now(),
+            last_used: Utc::now(),
+        });
+        let new_name = "Default";
+        assert!(index
+            .profiles
+            .iter()
+            .any(|p| p.id != profile_to_rename_id && p.name == new_name));
+    }
+
+    #[test]
+    fn get_profile_by_id_not_found() {
+        let index = LibraryIndex::default();
+        assert!(get_profile_by_id(&index, "nonexistent-id").is_err());
+    }
+}

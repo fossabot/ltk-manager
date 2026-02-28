@@ -185,3 +185,167 @@ fn read_cslol_info(path: &Path) -> AppResult<ltk_fantome::FantomeInfo> {
 
     serde_json::from_str(content).map_err(AppError::Serialization)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use assert_matches::assert_matches;
+    use std::collections::HashMap;
+
+    fn make_info_json_str(name: &str, author: &str) -> String {
+        serde_json::to_string(&ltk_fantome::FantomeInfo {
+            name: name.to_string(),
+            author: author.to_string(),
+            version: "1.0.0".to_string(),
+            description: "Desc".to_string(),
+            tags: Vec::new(),
+            champions: Vec::new(),
+            maps: Vec::new(),
+            layers: HashMap::new(),
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn read_cslol_info_valid_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("info.json");
+        fs::write(&path, make_info_json_str("Test", "Author")).unwrap();
+        let info = read_cslol_info(&path).unwrap();
+        assert_eq!(info.name, "Test");
+        assert_eq!(info.author, "Author");
+    }
+
+    #[test]
+    fn read_cslol_info_bom_prefixed() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("info.json");
+        let content = format!("\u{feff}{}", make_info_json_str("BOM Test", "Author"));
+        fs::write(&path, content).unwrap();
+        let info = read_cslol_info(&path).unwrap();
+        assert_eq!(info.name, "BOM Test");
+    }
+
+    #[test]
+    fn read_cslol_info_invalid_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("info.json");
+        fs::write(&path, "not json").unwrap();
+        assert_matches!(read_cslol_info(&path), Err(AppError::Serialization(_)));
+    }
+
+    #[test]
+    fn read_cslol_info_missing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nonexistent.json");
+        assert_matches!(read_cslol_info(&path), Err(AppError::Io(_)));
+    }
+
+    #[test]
+    fn scan_cslol_directory_missing_installed_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_matches!(
+            scan_cslol_directory(dir.path()),
+            Err(AppError::InvalidPath(_))
+        );
+    }
+
+    #[test]
+    fn scan_cslol_directory_empty_installed() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("installed")).unwrap();
+        let mods = scan_cslol_directory(dir.path()).unwrap();
+        assert!(mods.is_empty());
+    }
+
+    #[test]
+    fn scan_cslol_directory_valid_mods_sorted() {
+        let dir = tempfile::tempdir().unwrap();
+        let installed = dir.path().join("installed");
+
+        for (folder, name) in [("mod-b", "Zeta Mod"), ("mod-a", "Alpha Mod")] {
+            let meta_dir = installed.join(folder).join("META");
+            fs::create_dir_all(&meta_dir).unwrap();
+            fs::write(
+                meta_dir.join("info.json"),
+                make_info_json_str(name, "Author"),
+            )
+            .unwrap();
+        }
+
+        let mods = scan_cslol_directory(dir.path()).unwrap();
+        assert_eq!(mods.len(), 2);
+        assert_eq!(mods[0].name, "Alpha Mod");
+        assert_eq!(mods[1].name, "Zeta Mod");
+    }
+
+    #[test]
+    fn scan_cslol_directory_skips_without_info_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let installed = dir.path().join("installed");
+
+        let good = installed.join("good-mod").join("META");
+        fs::create_dir_all(&good).unwrap();
+        fs::write(good.join("info.json"), make_info_json_str("Good", "Author")).unwrap();
+
+        let bad = installed.join("bad-mod");
+        fs::create_dir_all(&bad).unwrap();
+
+        let mods = scan_cslol_directory(dir.path()).unwrap();
+        assert_eq!(mods.len(), 1);
+        assert_eq!(mods[0].name, "Good");
+    }
+
+    #[test]
+    fn create_fantome_zip_creates_valid_archive() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let mod_dir = dir.path().join("mod-source");
+        let meta_dir = mod_dir.join("META");
+        let wad_dir = mod_dir.join("WAD").join("test.wad.client");
+        fs::create_dir_all(&meta_dir).unwrap();
+        fs::create_dir_all(&wad_dir).unwrap();
+        fs::write(
+            meta_dir.join("info.json"),
+            make_info_json_str("Test", "Author"),
+        )
+        .unwrap();
+        fs::write(wad_dir.join("file.bin"), b"test data").unwrap();
+
+        let output = dir.path().join("output.fantome");
+        create_fantome_zip(&mod_dir, &output).unwrap();
+
+        assert!(output.exists());
+        let file = fs::File::open(&output).unwrap();
+        let archive = zip::ZipArchive::new(file).unwrap();
+        assert!(archive.len() > 0);
+    }
+
+    #[test]
+    fn add_dir_to_zip_uses_forward_slashes() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source");
+        let sub = source.join("sub").join("nested");
+        fs::create_dir_all(&sub).unwrap();
+        fs::write(sub.join("file.txt"), b"content").unwrap();
+
+        let output = dir.path().join("test.zip");
+        let file = fs::File::create(&output).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default();
+
+        add_dir_to_zip(&mut zip, &source, &source, options).unwrap();
+        zip.finish().unwrap();
+
+        let file = fs::File::open(&output).unwrap();
+        let mut archive = zip::ZipArchive::new(file).unwrap();
+        for i in 0..archive.len() {
+            let entry = archive.by_index(i).unwrap();
+            assert!(
+                !entry.name().contains('\\'),
+                "Entry name '{}' contains backslash",
+                entry.name()
+            );
+        }
+    }
+}

@@ -66,3 +66,46 @@ impl Default for PatcherStateInner {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn patcher_state_inner_defaults_to_idle() {
+        let inner = PatcherStateInner::new();
+        assert_eq!(inner.phase, PatcherPhase::Idle);
+        assert!(inner.thread_handle.is_none());
+        assert!(inner.config_path.is_none());
+    }
+
+    #[test]
+    fn is_running_false_when_no_thread() {
+        let inner = PatcherStateInner::new();
+        assert!(!inner.is_running());
+    }
+
+    #[test]
+    fn patcher_phase_serialization() {
+        assert_eq!(
+            serde_json::to_string(&PatcherPhase::Idle).unwrap(),
+            "\"idle\""
+        );
+        assert_eq!(
+            serde_json::to_string(&PatcherPhase::Building).unwrap(),
+            "\"building\""
+        );
+        assert_eq!(
+            serde_json::to_string(&PatcherPhase::Patching).unwrap(),
+            "\"patching\""
+        );
+    }
+
+    #[test]
+    fn patcher_state_new_creates_valid_state() {
+        let state = PatcherState::new();
+        let inner = state.0.lock().unwrap();
+        assert!(!inner.is_running());
+        assert_eq!(inner.phase, PatcherPhase::Idle);
+    }
+}

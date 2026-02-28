@@ -335,3 +335,88 @@ pub(crate) fn is_valid_project_name(name: &str) -> bool {
         && !name.starts_with('-')
         && !name.ends_with('-')
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn valid_project_name_simple() {
+        assert!(is_valid_project_name("my-mod"));
+    }
+
+    #[test]
+    fn valid_project_name_with_numbers() {
+        assert!(is_valid_project_name("mod-v2"));
+    }
+
+    #[test]
+    fn valid_project_name_single_char() {
+        assert!(is_valid_project_name("a"));
+    }
+
+    #[test]
+    fn invalid_project_name_empty() {
+        assert!(!is_valid_project_name(""));
+    }
+
+    #[test]
+    fn invalid_project_name_uppercase() {
+        assert!(!is_valid_project_name("MyMod"));
+    }
+
+    #[test]
+    fn invalid_project_name_spaces() {
+        assert!(!is_valid_project_name("my mod"));
+    }
+
+    #[test]
+    fn invalid_project_name_leading_dash() {
+        assert!(!is_valid_project_name("-my-mod"));
+    }
+
+    #[test]
+    fn invalid_project_name_trailing_dash() {
+        assert!(!is_valid_project_name("my-mod-"));
+    }
+
+    #[test]
+    fn invalid_project_name_special_chars() {
+        assert!(!is_valid_project_name("my_mod"));
+        assert!(!is_valid_project_name("my.mod"));
+        assert!(!is_valid_project_name("my@mod"));
+    }
+
+    #[test]
+    fn find_config_file_json() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("mod.config.json"), "{}").unwrap();
+        let result = find_config_file(dir.path());
+        assert!(result.is_some());
+        assert!(result.unwrap().ends_with("mod.config.json"));
+    }
+
+    #[test]
+    fn find_config_file_toml() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("mod.config.toml"), "").unwrap();
+        let result = find_config_file(dir.path());
+        assert!(result.is_some());
+        assert!(result.unwrap().ends_with("mod.config.toml"));
+    }
+
+    #[test]
+    fn find_config_file_prefers_json() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("mod.config.json"), "{}").unwrap();
+        std::fs::write(dir.path().join("mod.config.toml"), "").unwrap();
+        let result = find_config_file(dir.path());
+        assert!(result.unwrap().ends_with("mod.config.json"));
+    }
+
+    #[test]
+    fn find_config_file_none_when_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(find_config_file(dir.path()).is_none());
+    }
+}

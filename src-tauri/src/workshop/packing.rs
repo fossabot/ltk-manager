@@ -248,3 +248,334 @@ impl Workshop {
         Ok(thumbnail_path.to_string())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn make_valid_project(dir: &std::path::Path) {
+        let mod_project = ltk_mod_project::ModProject {
+            name: "test-mod".to_string(),
+            display_name: "Test Mod".to_string(),
+            version: "1.0.0".to_string(),
+            description: "A valid test mod".to_string(),
+            authors: vec![ltk_mod_project::ModProjectAuthor::Name(
+                "Author".to_string(),
+            )],
+            license: None,
+            tags: Vec::new(),
+            champions: Vec::new(),
+            maps: Vec::new(),
+            transformers: Vec::new(),
+            layers: ltk_mod_project::default_layers(),
+            thumbnail: None,
+        };
+        fs::write(
+            dir.join("mod.config.json"),
+            serde_json::to_string_pretty(&mod_project).unwrap(),
+        )
+        .unwrap();
+        fs::create_dir_all(dir.join("content").join("base")).unwrap();
+        fs::write(
+            dir.join("content").join("base").join("test.wad.client"),
+            b"data",
+        )
+        .unwrap();
+        fs::write(dir.join("thumbnail.webp"), b"fake thumbnail").unwrap();
+    }
+
+    fn validate_project_at(path: &std::path::Path) -> ValidationResult {
+        let mut errors = Vec::new();
+        let mut warnings = Vec::new();
+
+        let config_path = match find_config_file(path) {
+            Some(p) => p,
+            None => {
+                errors.push("No mod.config.json or mod.config.toml found".to_string());
+                return ValidationResult {
+                    valid: false,
+                    errors,
+                    warnings,
+                };
+            }
+        };
+
+        let mod_project = match load_mod_project(&config_path) {
+            Ok(p) => p,
+            Err(e) => {
+                errors.push(format!("Failed to parse config: {}", e));
+                return ValidationResult {
+                    valid: false,
+                    errors,
+                    warnings,
+                };
+            }
+        };
+
+        if !is_valid_project_name(&mod_project.name) {
+            errors
+                .push("Project name must be lowercase alphanumeric with hyphens only".to_string());
+        }
+
+        if semver::Version::parse(&mod_project.version).is_err() {
+            errors.push(format!(
+                "Invalid version format: {} (expected semver like 1.0.0)",
+                mod_project.version
+            ));
+        }
+
+        let content_dir = path.join("content");
+        if !content_dir.exists() {
+            errors.push("content/ directory not found".to_string());
+        } else {
+            for layer in &mod_project.layers {
+                let layer_dir = content_dir.join(&layer.name);
+                if !layer_dir.exists() {
+                    errors.push(format!("Layer directory content/{} not found", layer.name));
+                } else if layer_dir.read_dir().map(|d| d.count() == 0).unwrap_or(true) {
+                    warnings.push(format!("Layer content/{} is empty", layer.name));
+                }
+            }
+        }
+
+        if !mod_project.layers.iter().any(|l| l.name == "base") {
+            warnings.push("No 'base' layer defined".to_string());
+        }
+
+        if !path.join("thumbnail.webp").exists() && !path.join("thumbnail.png").exists() {
+            warnings.push("No thumbnail found (thumbnail.webp or thumbnail.png)".to_string());
+        }
+
+        ValidationResult {
+            valid: errors.is_empty(),
+            errors,
+            warnings,
+        }
+    }
+
+    #[test]
+    fn validate_missing_config_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = validate_project_at(dir.path());
+        assert!(!result.valid);
+        assert!(result.errors.iter().any(|e| e.contains("mod.config.json")));
+    }
+
+    #[test]
+    fn validate_invalid_config() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("mod.config.json"), "invalid json").unwrap();
+        let result = validate_project_at(dir.path());
+        assert!(!result.valid);
+        assert!(result.errors.iter().any(|e| e.contains("parse config")));
+    }
+
+    #[test]
+    fn validate_invalid_project_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let mod_project = ltk_mod_project::ModProject {
+            name: "BadName".to_string(),
+            display_name: "Bad".to_string(),
+            version: "1.0.0".to_string(),
+            description: "".to_string(),
+            authors: Vec::new(),
+            license: None,
+            tags: Vec::new(),
+            champions: Vec::new(),
+            maps: Vec::new(),
+            transformers: Vec::new(),
+            layers: ltk_mod_project::default_layers(),
+            thumbnail: None,
+        };
+        fs::write(
+            dir.path().join("mod.config.json"),
+            serde_json::to_string_pretty(&mod_project).unwrap(),
+        )
+        .unwrap();
+        fs::create_dir_all(dir.path().join("content").join("base")).unwrap();
+
+        let result = validate_project_at(dir.path());
+        assert!(!result.valid);
+        assert!(result.errors.iter().any(|e| e.contains("lowercase")));
+    }
+
+    #[test]
+    fn validate_invalid_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let mod_project = ltk_mod_project::ModProject {
+            name: "test-mod".to_string(),
+            display_name: "Test".to_string(),
+            version: "not-semver".to_string(),
+            description: "".to_string(),
+            authors: Vec::new(),
+            license: None,
+            tags: Vec::new(),
+            champions: Vec::new(),
+            maps: Vec::new(),
+            transformers: Vec::new(),
+            layers: ltk_mod_project::default_layers(),
+            thumbnail: None,
+        };
+        fs::write(
+            dir.path().join("mod.config.json"),
+            serde_json::to_string_pretty(&mod_project).unwrap(),
+        )
+        .unwrap();
+        fs::create_dir_all(dir.path().join("content").join("base")).unwrap();
+
+        let result = validate_project_at(dir.path());
+        assert!(!result.valid);
+        assert!(result.errors.iter().any(|e| e.contains("version")));
+    }
+
+    #[test]
+    fn validate_missing_content_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let mod_project = ltk_mod_project::ModProject {
+            name: "test-mod".to_string(),
+            display_name: "Test".to_string(),
+            version: "1.0.0".to_string(),
+            description: "".to_string(),
+            authors: Vec::new(),
+            license: None,
+            tags: Vec::new(),
+            champions: Vec::new(),
+            maps: Vec::new(),
+            transformers: Vec::new(),
+            layers: ltk_mod_project::default_layers(),
+            thumbnail: None,
+        };
+        fs::write(
+            dir.path().join("mod.config.json"),
+            serde_json::to_string_pretty(&mod_project).unwrap(),
+        )
+        .unwrap();
+
+        let result = validate_project_at(dir.path());
+        assert!(!result.valid);
+        assert!(result.errors.iter().any(|e| e.contains("content/")));
+    }
+
+    #[test]
+    fn validate_empty_layer_dir_warns() {
+        let dir = tempfile::tempdir().unwrap();
+        let mod_project = ltk_mod_project::ModProject {
+            name: "test-mod".to_string(),
+            display_name: "Test".to_string(),
+            version: "1.0.0".to_string(),
+            description: "".to_string(),
+            authors: Vec::new(),
+            license: None,
+            tags: Vec::new(),
+            champions: Vec::new(),
+            maps: Vec::new(),
+            transformers: Vec::new(),
+            layers: ltk_mod_project::default_layers(),
+            thumbnail: None,
+        };
+        fs::write(
+            dir.path().join("mod.config.json"),
+            serde_json::to_string_pretty(&mod_project).unwrap(),
+        )
+        .unwrap();
+        fs::create_dir_all(dir.path().join("content").join("base")).unwrap();
+
+        let result = validate_project_at(dir.path());
+        assert!(result.valid);
+        assert!(result.warnings.iter().any(|w| w.contains("empty")));
+    }
+
+    #[test]
+    fn validate_missing_thumbnail_warns() {
+        let dir = tempfile::tempdir().unwrap();
+        let mod_project = ltk_mod_project::ModProject {
+            name: "test-mod".to_string(),
+            display_name: "Test".to_string(),
+            version: "1.0.0".to_string(),
+            description: "".to_string(),
+            authors: Vec::new(),
+            license: None,
+            tags: Vec::new(),
+            champions: Vec::new(),
+            maps: Vec::new(),
+            transformers: Vec::new(),
+            layers: ltk_mod_project::default_layers(),
+            thumbnail: None,
+        };
+        fs::write(
+            dir.path().join("mod.config.json"),
+            serde_json::to_string_pretty(&mod_project).unwrap(),
+        )
+        .unwrap();
+        fs::create_dir_all(dir.path().join("content").join("base")).unwrap();
+        fs::write(
+            dir.path().join("content").join("base").join("file"),
+            b"data",
+        )
+        .unwrap();
+
+        let result = validate_project_at(dir.path());
+        assert!(result.valid);
+        assert!(result.warnings.iter().any(|w| w.contains("thumbnail")));
+    }
+
+    #[test]
+    fn validate_valid_project_passes() {
+        let dir = tempfile::tempdir().unwrap();
+        make_valid_project(dir.path());
+        let result = validate_project_at(dir.path());
+        assert!(
+            result.valid,
+            "errors: {:?}, warnings: {:?}",
+            result.errors, result.warnings
+        );
+        assert!(result.errors.is_empty());
+    }
+
+    #[test]
+    fn validate_no_base_layer_warns() {
+        let dir = tempfile::tempdir().unwrap();
+        let mod_project = ltk_mod_project::ModProject {
+            name: "test-mod".to_string(),
+            display_name: "Test".to_string(),
+            version: "1.0.0".to_string(),
+            description: "".to_string(),
+            authors: Vec::new(),
+            license: None,
+            tags: Vec::new(),
+            champions: Vec::new(),
+            maps: Vec::new(),
+            transformers: Vec::new(),
+            layers: vec![ltk_mod_project::ModProjectLayer {
+                name: "chroma".to_string(),
+                priority: 1,
+                description: None,
+                string_overrides: HashMap::new(),
+            }],
+            thumbnail: None,
+        };
+        fs::write(
+            dir.path().join("mod.config.json"),
+            serde_json::to_string_pretty(&mod_project).unwrap(),
+        )
+        .unwrap();
+        fs::create_dir_all(dir.path().join("content").join("chroma")).unwrap();
+        fs::write(
+            dir.path().join("content").join("chroma").join("file"),
+            b"data",
+        )
+        .unwrap();
+
+        let result = validate_project_at(dir.path());
+        assert!(result.warnings.iter().any(|w| w.contains("base")));
+    }
+
+    #[test]
+    fn pack_format_deserialization() {
+        let modpkg: PackFormat = serde_json::from_str("\"modpkg\"").unwrap();
+        assert_eq!(modpkg, PackFormat::Modpkg);
+        let fantome: PackFormat = serde_json::from_str("\"fantome\"").unwrap();
+        assert_eq!(fantome, PackFormat::Fantome);
+    }
+}

@@ -291,3 +291,161 @@ impl<T, E> MutexResultExt<T> for Result<T, std::sync::PoisonError<E>> {
         self.map_err(|_| AppError::MutexLockFailed)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn error_code_serializes_as_screaming_snake_case() {
+        assert_eq!(serde_json::to_string(&ErrorCode::Io).unwrap(), "\"IO\"");
+        assert_eq!(
+            serde_json::to_string(&ErrorCode::LeagueNotFound).unwrap(),
+            "\"LEAGUE_NOT_FOUND\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ErrorCode::ModNotFound).unwrap(),
+            "\"MOD_NOT_FOUND\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ErrorCode::InvalidPath).unwrap(),
+            "\"INVALID_PATH\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ErrorCode::WorkshopNotConfigured).unwrap(),
+            "\"WORKSHOP_NOT_CONFIGURED\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ErrorCode::ProjectAlreadyExists).unwrap(),
+            "\"PROJECT_ALREADY_EXISTS\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ErrorCode::PatcherRunning).unwrap(),
+            "\"PATCHER_RUNNING\""
+        );
+    }
+
+    #[test]
+    fn error_code_round_trips() {
+        for code in [
+            ErrorCode::Io,
+            ErrorCode::Serialization,
+            ErrorCode::Modpkg,
+            ErrorCode::LeagueNotFound,
+            ErrorCode::InvalidPath,
+            ErrorCode::ModNotFound,
+            ErrorCode::ValidationFailed,
+            ErrorCode::InternalState,
+            ErrorCode::MutexLockFailed,
+            ErrorCode::Unknown,
+            ErrorCode::WorkshopNotConfigured,
+            ErrorCode::ProjectNotFound,
+            ErrorCode::ProjectAlreadyExists,
+            ErrorCode::PackFailed,
+            ErrorCode::Fantome,
+            ErrorCode::Wad,
+            ErrorCode::PatcherRunning,
+            ErrorCode::Zip,
+        ] {
+            let json = serde_json::to_string(&code).unwrap();
+            let deserialized: ErrorCode = serde_json::from_str(&json).unwrap();
+            assert_eq!(deserialized, code);
+        }
+    }
+
+    #[test]
+    fn app_error_response_new() {
+        let resp = AppErrorResponse::new(ErrorCode::Io, "disk full");
+        assert_eq!(resp.code, ErrorCode::Io);
+        assert_eq!(resp.message, "disk full");
+        assert!(resp.context.is_none());
+    }
+
+    #[test]
+    fn app_error_response_with_context() {
+        let resp = AppErrorResponse::new(ErrorCode::InvalidPath, "bad path")
+            .with_context(serde_json::json!({ "path": "/foo" }));
+        assert_eq!(resp.context.unwrap()["path"], "/foo");
+    }
+
+    #[test]
+    fn app_error_to_response_invalid_path_preserves_context() {
+        let error = AppError::InvalidPath("/bad/path".to_string());
+        let resp: AppErrorResponse = error.into();
+        assert_eq!(resp.code, ErrorCode::InvalidPath);
+        assert_eq!(resp.context.unwrap()["path"], "/bad/path");
+    }
+
+    #[test]
+    fn app_error_to_response_mod_not_found_preserves_context() {
+        let error = AppError::ModNotFound("mod123".to_string());
+        let resp: AppErrorResponse = error.into();
+        assert_eq!(resp.code, ErrorCode::ModNotFound);
+        assert_eq!(resp.context.unwrap()["modId"], "mod123");
+    }
+
+    #[test]
+    fn app_error_to_response_project_not_found_preserves_context() {
+        let error = AppError::ProjectNotFound("my-project".to_string());
+        let resp: AppErrorResponse = error.into();
+        assert_eq!(resp.code, ErrorCode::ProjectNotFound);
+        assert_eq!(resp.context.unwrap()["projectName"], "my-project");
+    }
+
+    #[test]
+    fn app_error_to_response_patcher_running() {
+        let error = AppError::PatcherRunning;
+        let resp: AppErrorResponse = error.into();
+        assert_eq!(resp.code, ErrorCode::PatcherRunning);
+        assert!(resp.context.is_none());
+    }
+
+    #[test]
+    fn ipc_result_ok_serialization() {
+        let result: IpcResult<String> = IpcResult::ok("hello".to_string());
+        let json = serde_json::to_value(&result).unwrap();
+        assert_eq!(json["ok"], true);
+        assert_eq!(json["value"], "hello");
+    }
+
+    #[test]
+    fn ipc_result_err_serialization() {
+        let resp = AppErrorResponse::new(ErrorCode::Io, "disk full");
+        let result: IpcResult<String> = IpcResult::err(resp);
+        let json = serde_json::to_value(&result).unwrap();
+        assert_eq!(json["ok"], false);
+        assert_eq!(json["error"]["code"], "IO");
+        assert_eq!(json["error"]["message"], "disk full");
+    }
+
+    #[test]
+    fn ipc_result_from_ok() {
+        let result: IpcResult<i32> = Ok::<i32, AppErrorResponse>(42).into();
+        let json = serde_json::to_value(&result).unwrap();
+        assert_eq!(json["ok"], true);
+        assert_eq!(json["value"], 42);
+    }
+
+    #[test]
+    fn ipc_result_from_err() {
+        let err = AppErrorResponse::new(ErrorCode::Unknown, "oops");
+        let result: IpcResult<i32> = Err::<i32, AppErrorResponse>(err).into();
+        let json = serde_json::to_value(&result).unwrap();
+        assert_eq!(json["ok"], false);
+        assert_eq!(json["error"]["code"], "UNKNOWN");
+    }
+
+    #[test]
+    fn mutex_result_ext_ok() {
+        let mutex = std::sync::Mutex::new(42);
+        let guard = mutex.lock().mutex_err().unwrap();
+        assert_eq!(*guard, 42);
+    }
+
+    #[test]
+    fn app_error_response_context_skipped_when_none() {
+        let resp = AppErrorResponse::new(ErrorCode::Io, "err");
+        let json = serde_json::to_value(&resp).unwrap();
+        assert!(json.get("context").is_none());
+    }
+}

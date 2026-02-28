@@ -137,3 +137,78 @@ pub struct Settings {
     #[serde(default)]
     pub migration_dismissed: bool,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn settings_default_values() {
+        let settings = Settings::default();
+        assert!(settings.league_path.is_none());
+        assert!(settings.mod_storage_path.is_none());
+        assert!(settings.workshop_path.is_none());
+        assert!(!settings.first_run_complete);
+        assert_eq!(settings.theme, Theme::System);
+        assert!(!settings.patch_tft);
+        assert!(!settings.migration_dismissed);
+    }
+
+    #[test]
+    fn settings_json_round_trip() {
+        let settings = Settings {
+            league_path: Some(PathBuf::from("/game")),
+            mod_storage_path: Some(PathBuf::from("/mods")),
+            workshop_path: None,
+            first_run_complete: true,
+            theme: Theme::Dark,
+            accent_color: AccentColor {
+                preset: Some("purple".to_string()),
+                custom_hue: None,
+            },
+            backdrop_image: None,
+            backdrop_blur: Some(40),
+            library_view_mode: Some("list".to_string()),
+            patch_tft: true,
+            migration_dismissed: false,
+        };
+        let json = serde_json::to_string(&settings).unwrap();
+        let deserialized: Settings = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.league_path.unwrap(), PathBuf::from("/game"));
+        assert!(deserialized.first_run_complete);
+        assert_eq!(deserialized.theme, Theme::Dark);
+        assert!(deserialized.patch_tft);
+    }
+
+    #[test]
+    fn theme_serialization() {
+        assert_eq!(serde_json::to_string(&Theme::System).unwrap(), "\"system\"");
+        assert_eq!(serde_json::to_string(&Theme::Dark).unwrap(), "\"dark\"");
+        assert_eq!(serde_json::to_string(&Theme::Light).unwrap(), "\"light\"");
+    }
+
+    #[test]
+    fn theme_deserialization() {
+        assert_eq!(
+            serde_json::from_str::<Theme>("\"system\"").unwrap(),
+            Theme::System
+        );
+        assert_eq!(
+            serde_json::from_str::<Theme>("\"dark\"").unwrap(),
+            Theme::Dark
+        );
+        assert_eq!(
+            serde_json::from_str::<Theme>("\"light\"").unwrap(),
+            Theme::Light
+        );
+    }
+
+    #[test]
+    fn settings_deserializes_with_missing_optional_fields() {
+        let json = r#"{"firstRunComplete": false, "theme": "system", "accentColor": {}, "patchTft": false, "migrationDismissed": false}"#;
+        let settings: Settings = serde_json::from_str(json).unwrap();
+        assert!(settings.league_path.is_none());
+        assert!(settings.mod_storage_path.is_none());
+        assert!(!settings.first_run_complete);
+    }
+}

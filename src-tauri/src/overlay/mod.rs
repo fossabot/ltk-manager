@@ -155,3 +155,96 @@ fn resolve_game_dir(settings: &Settings) -> AppResult<PathBuf> {
         league_root.display()
     )))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use assert_matches::assert_matches;
+
+    #[test]
+    fn resolve_game_dir_no_league_path() {
+        let settings = Settings::default();
+        assert_matches!(
+            resolve_game_dir(&settings),
+            Err(AppError::ValidationFailed(_))
+        );
+    }
+
+    #[test]
+    fn resolve_game_dir_with_game_subdir() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("Game")).unwrap();
+
+        let settings = Settings {
+            league_path: Some(dir.path().to_path_buf()),
+            ..Settings::default()
+        };
+        let result = resolve_game_dir(&settings).unwrap();
+        assert!(result.ends_with("Game"));
+    }
+
+    #[test]
+    fn resolve_game_dir_with_data_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("DATA")).unwrap();
+
+        let settings = Settings {
+            league_path: Some(dir.path().to_path_buf()),
+            ..Settings::default()
+        };
+        let result = resolve_game_dir(&settings).unwrap();
+        assert_eq!(result, dir.path().to_path_buf());
+    }
+
+    #[test]
+    fn resolve_game_dir_neither_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let settings = Settings {
+            league_path: Some(dir.path().to_path_buf()),
+            ..Settings::default()
+        };
+        assert_matches!(
+            resolve_game_dir(&settings),
+            Err(AppError::ValidationFailed(_))
+        );
+    }
+
+    #[test]
+    fn overlay_stage_serialization() {
+        assert_eq!(
+            serde_json::to_string(&OverlayStage::Indexing).unwrap(),
+            "\"indexing\""
+        );
+        assert_eq!(
+            serde_json::to_string(&OverlayStage::Collecting).unwrap(),
+            "\"collecting\""
+        );
+        assert_eq!(
+            serde_json::to_string(&OverlayStage::Patching).unwrap(),
+            "\"patching\""
+        );
+        assert_eq!(
+            serde_json::to_string(&OverlayStage::Strings).unwrap(),
+            "\"strings\""
+        );
+        assert_eq!(
+            serde_json::to_string(&OverlayStage::Complete).unwrap(),
+            "\"complete\""
+        );
+    }
+
+    #[test]
+    fn overlay_progress_serialization() {
+        let progress = OverlayProgress {
+            stage: OverlayStage::Patching,
+            current_file: Some("test.wad.client".to_string()),
+            current: 5,
+            total: 10,
+        };
+        let json = serde_json::to_value(&progress).unwrap();
+        assert_eq!(json["stage"], "patching");
+        assert_eq!(json["currentFile"], "test.wad.client");
+        assert_eq!(json["current"], 5);
+        assert_eq!(json["total"], 10);
+    }
+}

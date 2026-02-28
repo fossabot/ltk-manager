@@ -221,3 +221,150 @@ fn is_wad_file_name(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
     lower.ends_with(".wad.client") || lower.ends_with(".wad") || lower.ends_with(".wad.mobile")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Cursor, Write};
+
+    fn make_fantome_zip(entries: &[(&str, &[u8])]) -> Cursor<Vec<u8>> {
+        let buffer = Vec::new();
+        let cursor = Cursor::new(buffer);
+        let mut zip = zip::ZipWriter::new(cursor);
+        let options = zip::write::SimpleFileOptions::default();
+        for (name, data) in entries {
+            zip.start_file(*name, options).unwrap();
+            zip.write_all(data).unwrap();
+        }
+        let mut cursor = zip.finish().unwrap();
+        cursor.set_position(0);
+        cursor
+    }
+
+    fn make_info_json(name: &str) -> Vec<u8> {
+        serde_json::to_vec(&ltk_fantome::FantomeInfo {
+            name: name.to_string(),
+            author: "Author".to_string(),
+            version: "1.0.0".to_string(),
+            description: "Desc".to_string(),
+            tags: Vec::new(),
+            champions: Vec::new(),
+            maps: Vec::new(),
+            layers: std::collections::HashMap::new(),
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn new_with_valid_zip() {
+        let cursor = make_fantome_zip(&[("META/info.json", &make_info_json("Test"))]);
+        assert!(FantomeContent::new(cursor).is_ok());
+    }
+
+    #[test]
+    fn new_with_invalid_data() {
+        let cursor = Cursor::new(b"not a zip".to_vec());
+        assert!(FantomeContent::new(cursor).is_err());
+    }
+
+    #[test]
+    fn mod_project_reads_info_json() {
+        let cursor = make_fantome_zip(&[("META/info.json", &make_info_json("My Mod"))]);
+        let mut content = FantomeContent::new(cursor).unwrap();
+        let project = content.mod_project().unwrap();
+        assert_eq!(project.display_name, "My Mod");
+        assert_eq!(project.version, "1.0.0");
+    }
+
+    #[test]
+    fn mod_project_missing_info_json() {
+        let cursor = make_fantome_zip(&[("WAD/test.wad.client/file", b"data")]);
+        let mut content = FantomeContent::new(cursor).unwrap();
+        assert!(content.mod_project().is_err());
+    }
+
+    #[test]
+    fn mod_project_handles_bom() {
+        let info_str = format!(
+            "\u{feff}{}",
+            serde_json::to_string(&ltk_fantome::FantomeInfo {
+                name: "BOM Mod".to_string(),
+                author: "Author".to_string(),
+                version: "1.0.0".to_string(),
+                description: "Desc".to_string(),
+                tags: Vec::new(),
+                champions: Vec::new(),
+                maps: Vec::new(),
+                layers: std::collections::HashMap::new(),
+            })
+            .unwrap()
+        );
+        let cursor = make_fantome_zip(&[("META/info.json", info_str.as_bytes())]);
+        let mut content = FantomeContent::new(cursor).unwrap();
+        let project = content.mod_project().unwrap();
+        assert_eq!(project.display_name, "BOM Mod");
+    }
+
+    #[test]
+    fn list_layer_wads_finds_directory_wads() {
+        let cursor = make_fantome_zip(&[
+            ("META/info.json", &make_info_json("Test")),
+            ("WAD/Aatrox.wad.client/file1", b"data1"),
+            ("WAD/Aatrox.wad.client/file2", b"data2"),
+        ]);
+        let mut content = FantomeContent::new(cursor).unwrap();
+        let wads = content.list_layer_wads("base").unwrap();
+        assert_eq!(wads.len(), 1);
+        assert!(wads.contains(&"Aatrox.wad.client".to_string()));
+    }
+
+    #[test]
+    fn list_layer_wads_non_base_returns_empty() {
+        let cursor = make_fantome_zip(&[
+            ("META/info.json", &make_info_json("Test")),
+            ("WAD/Aatrox.wad.client/file1", b"data1"),
+        ]);
+        let mut content = FantomeContent::new(cursor).unwrap();
+        let wads = content.list_layer_wads("chroma").unwrap();
+        assert!(wads.is_empty());
+    }
+
+    #[test]
+    fn read_wad_overrides_directory_style() {
+        let cursor = make_fantome_zip(&[
+            ("META/info.json", &make_info_json("Test")),
+            ("WAD/Aatrox.wad.client/file1.bin", b"data1"),
+            ("WAD/Aatrox.wad.client/sub/file2.bin", b"data2"),
+        ]);
+        let mut content = FantomeContent::new(cursor).unwrap();
+        let overrides = content
+            .read_wad_overrides("base", "Aatrox.wad.client")
+            .unwrap();
+        assert_eq!(overrides.len(), 2);
+        let paths: Vec<&str> = overrides.iter().map(|(p, _)| p.as_str()).collect();
+        assert!(paths.contains(&"file1.bin"));
+        assert!(paths.contains(&"sub/file2.bin"));
+    }
+
+    #[test]
+    fn read_wad_overrides_non_base_returns_empty() {
+        let cursor = make_fantome_zip(&[
+            ("META/info.json", &make_info_json("Test")),
+            ("WAD/Aatrox.wad.client/file1.bin", b"data1"),
+        ]);
+        let mut content = FantomeContent::new(cursor).unwrap();
+        let overrides = content
+            .read_wad_overrides("chroma", "Aatrox.wad.client")
+            .unwrap();
+        assert!(overrides.is_empty());
+    }
+
+    #[test]
+    fn is_wad_file_name_variants() {
+        assert!(is_wad_file_name("test.wad.client"));
+        assert!(is_wad_file_name("test.wad"));
+        assert!(is_wad_file_name("test.wad.mobile"));
+        assert!(!is_wad_file_name("test.txt"));
+        assert!(!is_wad_file_name(""));
+    }
+}
