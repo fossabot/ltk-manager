@@ -318,7 +318,7 @@ mod tests {
         assert!(output.exists());
         let file = fs::File::open(&output).unwrap();
         let archive = zip::ZipArchive::new(file).unwrap();
-        assert!(archive.len() > 0);
+        assert!(!archive.is_empty());
     }
 
     #[test]
