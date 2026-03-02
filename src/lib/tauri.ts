@@ -85,6 +85,8 @@ export const api = {
   getPatcherStatus: () => invokeResult<PatcherStatus>("get_patcher_status"),
 
   // Hotkeys
+  pauseHotkeys: () => invokeResult<void>("pause_hotkeys"),
+  resumeHotkeys: () => invokeResult<void>("resume_hotkeys"),
   setReloadModsHotkey: (accelerator: string | null) =>
     invokeResult<void>("set_reload_mods_hotkey", { accelerator }),
   setKillLeagueHotkey: (accelerator: string | null) =>

@@ -22,6 +22,7 @@ export function useHotkeyEvents() {
   testingProjectsRef.current = testingProjects;
 
   useEffect(() => {
+    let mounted = true;
     let unlistenReload: UnlistenFn | null = null;
     let unlistenError: UnlistenFn | null = null;
 
@@ -40,16 +41,25 @@ export function useHotkeyEvents() {
         }
       }
     }).then((fn) => {
-      unlistenReload = fn;
+      if (mounted) {
+        unlistenReload = fn;
+      } else {
+        fn();
+      }
     });
 
     listen<string>("hotkey-error", (event) => {
       toast.error("Hotkey Error", event.payload);
     }).then((fn) => {
-      unlistenError = fn;
+      if (mounted) {
+        unlistenError = fn;
+      } else {
+        fn();
+      }
     });
 
     return () => {
+      mounted = false;
       if (unlistenReload) unlistenReload();
       if (unlistenError) unlistenError();
     };

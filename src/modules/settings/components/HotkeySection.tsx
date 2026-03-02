@@ -71,13 +71,23 @@ function HotkeyInput({ label, description, value, onSet }: HotkeyInputProps) {
   const [isPending, setIsPending] = useState(false);
   const toast = useToast();
 
+  async function startCapture() {
+    await api.pauseHotkeys();
+    setIsCapturing(true);
+  }
+
+  async function stopCapture() {
+    setIsCapturing(false);
+    await api.resumeHotkeys();
+  }
+
   async function handleKeyDown(e: React.KeyboardEvent) {
     if (!isCapturing) return;
     e.preventDefault();
     e.stopPropagation();
 
     if (e.key === "Escape") {
-      setIsCapturing(false);
+      await stopCapture();
       return;
     }
 
@@ -110,6 +120,7 @@ function HotkeyInput({ label, description, value, onSet }: HotkeyInputProps) {
     } catch (err) {
       toast.error("Failed to set hotkey", err instanceof Error ? err.message : String(err));
     } finally {
+      await api.resumeHotkeys();
       setIsPending(false);
     }
   }
@@ -138,9 +149,9 @@ function HotkeyInput({ label, description, value, onSet }: HotkeyInputProps) {
           <div
             className="flex h-9 min-w-[140px] animate-pulse items-center justify-center rounded-lg border-2 border-brand-500 bg-brand-500/10 px-3 text-sm font-medium text-brand-300 outline-none"
             tabIndex={0}
+            ref={(el: HTMLDivElement | null) => el?.focus()}
             onKeyDown={handleKeyDown}
-            onBlur={() => setIsCapturing(false)}
-            autoFocus
+            onBlur={() => stopCapture()}
           >
             Press a key combo...
           </div>
@@ -149,7 +160,7 @@ function HotkeyInput({ label, description, value, onSet }: HotkeyInputProps) {
             variant="outline"
             size="sm"
             left={<LuKeyboard className="h-3.5 w-3.5" />}
-            onClick={() => setIsCapturing(true)}
+            onClick={() => startCapture()}
             loading={isPending}
           >
             {value ?? "Not set"}

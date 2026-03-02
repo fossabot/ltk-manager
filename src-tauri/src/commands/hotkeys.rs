@@ -123,8 +123,13 @@ fn execute_hot_reload(app_handle: &AppHandle) -> AppResult<()> {
         ps.last_config.clone()
     };
 
-    let config = last_config
-        .ok_or_else(|| AppError::Other("No previous patcher config to reload with".to_string()))?;
+    let config = match last_config {
+        Some(c) => c,
+        None => {
+            tracing::info!("Hot reload: no previous patcher session, ignoring");
+            return Ok(());
+        }
+    };
 
     // Stop patcher if running
     {
@@ -197,6 +202,46 @@ fn execute_kill_league(app_handle: &AppHandle) -> AppResult<()> {
 
 // ── IPC commands (called from frontend) ──
 
+/// Temporarily unregister all hotkeys (e.g. while capturing a new binding).
+#[tauri::command]
+pub fn pause_hotkeys(app_handle: AppHandle, settings: State<SettingsState>) -> IpcResult<()> {
+    pause_hotkeys_inner(&app_handle, &settings).into()
+}
+
+fn pause_hotkeys_inner(app_handle: &AppHandle, settings: &State<SettingsState>) -> AppResult<()> {
+    let s = settings.0.lock().mutex_err()?;
+    if let Some(ref hotkey) = s.reload_mods_hotkey {
+        unregister_hotkey(app_handle, hotkey);
+    }
+    if let Some(ref hotkey) = s.kill_league_hotkey {
+        unregister_hotkey(app_handle, hotkey);
+    }
+    tracing::info!("Paused all global hotkeys");
+    Ok(())
+}
+
+/// Re-register all hotkeys after capture mode ends.
+#[tauri::command]
+pub fn resume_hotkeys(app_handle: AppHandle, settings: State<SettingsState>) -> IpcResult<()> {
+    resume_hotkeys_inner(&app_handle, &settings).into()
+}
+
+fn resume_hotkeys_inner(app_handle: &AppHandle, settings: &State<SettingsState>) -> AppResult<()> {
+    let s = settings.0.lock().mutex_err()?;
+    if let Some(ref hotkey) = s.reload_mods_hotkey {
+        if let Err(e) = register_reload_hotkey(app_handle, hotkey) {
+            tracing::error!("Failed to resume reload-mods hotkey: {}", e);
+        }
+    }
+    if let Some(ref hotkey) = s.kill_league_hotkey {
+        if let Err(e) = register_kill_hotkey(app_handle, hotkey) {
+            tracing::error!("Failed to resume kill-league hotkey: {}", e);
+        }
+    }
+    tracing::info!("Resumed all global hotkeys");
+    Ok(())
+}
+
 /// Set (or clear) the global hotkey for reloading mods.
 #[tauri::command]
 pub fn set_reload_mods_hotkey(
@@ -213,19 +258,29 @@ fn set_reload_mods_hotkey_inner(
     settings: &State<SettingsState>,
 ) -> AppResult<()> {
     let mut s = settings.0.lock().mutex_err()?;
-
-    // Unregister old hotkey
-    if let Some(ref old) = s.reload_mods_hotkey {
-        unregister_hotkey(app_handle, old);
-    }
+    let old_hotkey = s.reload_mods_hotkey.clone();
 
     match accelerator {
         Some(ref accel) if !accel.trim().is_empty() => {
             let trimmed = accel.trim().to_string();
+            // Reject if the same hotkey is already used by the other action
+            if s.kill_league_hotkey.as_deref() == Some(trimmed.as_str()) {
+                return Err(AppError::ValidationFailed(
+                    "This hotkey is already used for Kill League".to_string(),
+                ));
+            }
+            // Register new hotkey first — if this fails, the old one stays active
             register_reload_hotkey(app_handle, &trimmed)?;
+            // Only unregister old after successful registration
+            if let Some(ref old) = old_hotkey {
+                unregister_hotkey(app_handle, old);
+            }
             s.reload_mods_hotkey = Some(trimmed);
         }
         _ => {
+            if let Some(ref old) = old_hotkey {
+                unregister_hotkey(app_handle, old);
+            }
             s.reload_mods_hotkey = None;
         }
     }
@@ -250,19 +305,29 @@ fn set_kill_league_hotkey_inner(
     settings: &State<SettingsState>,
 ) -> AppResult<()> {
     let mut s = settings.0.lock().mutex_err()?;
-
-    // Unregister old hotkey
-    if let Some(ref old) = s.kill_league_hotkey {
-        unregister_hotkey(app_handle, old);
-    }
+    let old_hotkey = s.kill_league_hotkey.clone();
 
     match accelerator {
         Some(ref accel) if !accel.trim().is_empty() => {
             let trimmed = accel.trim().to_string();
+            // Reject if the same hotkey is already used by the other action
+            if s.reload_mods_hotkey.as_deref() == Some(trimmed.as_str()) {
+                return Err(AppError::ValidationFailed(
+                    "This hotkey is already used for Hot Reload Mods".to_string(),
+                ));
+            }
+            // Register new hotkey first — if this fails, the old one stays active
             register_kill_hotkey(app_handle, &trimmed)?;
+            // Only unregister old after successful registration
+            if let Some(ref old) = old_hotkey {
+                unregister_hotkey(app_handle, old);
+            }
             s.kill_league_hotkey = Some(trimmed);
         }
         _ => {
+            if let Some(ref old) = old_hotkey {
+                unregister_hotkey(app_handle, old);
+            }
             s.kill_league_hotkey = None;
         }
     }
@@ -371,16 +436,16 @@ fn wait_for_patcher_stop(state: &PatcherState) -> AppResult<()> {
         {
             let ps = state.0.lock().mutex_err()?;
             if !ps.is_running() {
-                break;
+                return Ok(());
             }
         }
         if std::time::Instant::now() > deadline {
-            tracing::warn!("Timed out waiting for patcher to stop");
-            break;
+            return Err(AppError::Other(
+                "Timed out waiting for patcher to stop".to_string(),
+            ));
         }
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
-    Ok(())
 }
 
 // ── LCU Reconnect ──

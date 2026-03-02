@@ -159,6 +159,8 @@ fn main() {
             commands::stop_patcher,
             commands::get_patcher_status,
             // Hotkeys
+            commands::pause_hotkeys,
+            commands::resume_hotkeys,
             commands::set_reload_mods_hotkey,
             commands::set_kill_league_hotkey,
             commands::hot_reload_mods,
