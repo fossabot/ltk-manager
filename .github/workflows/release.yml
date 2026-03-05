@@ -150,6 +150,7 @@ jobs:
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           SIGNTOOL_PATH: ${{ steps.signtool.outputs.SIGNTOOL_PATH }}
         with:
+          args: --verbose
           tagName: ${{ steps.version.outputs.tag }}
           releaseName: "LTK Manager v${{ steps.version.outputs.version }}"
           releaseBody: ${{ steps.changelog.outputs.content }}
