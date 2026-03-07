@@ -1,6 +1,6 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState } from "react";
-import { LuCircleAlert, LuCircleCheck, LuFolderOpen, LuLoader } from "react-icons/lu";
+import { LuCircleAlert, LuCircleCheck, LuFolderOpen, LuGamepad2, LuLoader } from "react-icons/lu";
 
 import { Button, Field, IconButton, SectionCard, Tooltip } from "@/components";
 import { api, type Settings } from "@/lib/tauri";
@@ -63,7 +63,7 @@ export function LeaguePathSection({ settings, onSave }: SettingsSectionProps) {
   }
 
   return (
-    <SectionCard title="League of Legends">
+    <SectionCard title="League of Legends" icon={<LuGamepad2 className="h-5 w-5" />}>
       <div className="space-y-3">
         <span className="block text-sm font-medium text-surface-400">Installation Path</span>
         <div className="flex gap-2">

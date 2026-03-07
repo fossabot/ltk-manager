@@ -1,4 +1,4 @@
-import { LuDownload } from "react-icons/lu";
+import { LuDownload, LuPackageOpen } from "react-icons/lu";
 
 import { Button, SectionCard } from "@/components";
 
@@ -8,7 +8,7 @@ interface MigrationSectionProps {
 
 export function MigrationSection({ onImport }: MigrationSectionProps) {
   return (
-    <SectionCard title="Import from cslol-manager">
+    <SectionCard title="Import from cslol-manager" icon={<LuPackageOpen className="h-5 w-5" />}>
       <div className="space-y-3">
         <p className="text-sm text-surface-400">
           If you previously used cslol-manager, you can import your installed mods into LTK Manager.

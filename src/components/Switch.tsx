@@ -1,4 +1,4 @@
-import { Switch as BaseSwitch } from "@base-ui-components/react/switch";
+import { Switch as BaseSwitch } from "@base-ui/react/switch";
 import { forwardRef } from "react";
 import { twMerge } from "tailwind-merge";
 
@@ -25,7 +25,7 @@ export const Switch = forwardRef<HTMLSpanElement, SwitchProps>(
       <BaseSwitch.Root
         ref={ref}
         className={twMerge(
-          "relative inline-flex shrink-0 rounded-full transition-colors",
+          "relative inline-flex shrink-0 cursor-pointer rounded-full transition-colors",
           "bg-surface-700 data-[checked]:bg-brand-500",
           "data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50",
           trackClasses[size],

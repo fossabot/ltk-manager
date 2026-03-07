@@ -1,3 +1,5 @@
+import { LuMonitorDown } from "react-icons/lu";
+
 import { SectionCard, Switch } from "@/components";
 import type { Settings } from "@/lib/tauri";
 
@@ -8,7 +10,7 @@ interface MinimizeToTraySectionProps {
 
 export function MinimizeToTraySection({ settings, onSave }: MinimizeToTraySectionProps) {
   return (
-    <SectionCard title="Minimize to Tray">
+    <SectionCard title="Minimize to Tray" icon={<LuMonitorDown className="h-5 w-5" />}>
       <div className="space-y-3">
         <label className="flex items-center justify-between gap-4">
           <div>

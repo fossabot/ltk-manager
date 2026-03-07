@@ -1,5 +1,5 @@
 import { open } from "@tauri-apps/plugin-dialog";
-import { LuFolderOpen } from "react-icons/lu";
+import { LuFolderOpen, LuHammer } from "react-icons/lu";
 
 import { Field, IconButton, SectionCard, Tooltip } from "@/components";
 import type { Settings } from "@/lib/tauri";
@@ -26,7 +26,7 @@ export function WorkshopSection({ settings, onSave }: WorkshopSectionProps) {
   }
 
   return (
-    <SectionCard title="Workshop">
+    <SectionCard title="Workshop" icon={<LuHammer className="h-5 w-5" />}>
       <div className="space-y-3">
         <span className="block text-sm font-medium text-surface-400">Workshop Directory</span>
         <div className="flex gap-2">

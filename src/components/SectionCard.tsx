@@ -1,13 +1,14 @@
-import { type ReactNode } from "react";
+import { type ReactElement, type ReactNode } from "react";
 import { twMerge } from "tailwind-merge";
 
 interface SectionCardProps {
   title: string;
+  icon?: ReactElement;
   children: ReactNode;
   className?: string;
 }
 
-export function SectionCard({ title, children, className }: SectionCardProps) {
+export function SectionCard({ title, icon, children, className }: SectionCardProps) {
   return (
     <section
       className={twMerge(
@@ -15,7 +16,10 @@ export function SectionCard({ title, children, className }: SectionCardProps) {
         className,
       )}
     >
-      <h3 className="mb-4 text-lg font-medium text-surface-100">{title}</h3>
+      <h3 className="mb-4 flex items-center gap-2 text-lg font-medium text-surface-100">
+        {icon && <span className="text-surface-400">{icon}</span>}
+        {title}
+      </h3>
       {children}
     </section>
   );

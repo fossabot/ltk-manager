@@ -1,5 +1,5 @@
 import { open } from "@tauri-apps/plugin-dialog";
-import { LuFolderOpen } from "react-icons/lu";
+import { LuFolderOpen, LuHardDrive } from "react-icons/lu";
 
 import { Field, IconButton, SectionCard, Tooltip } from "@/components";
 import type { Settings } from "@/lib/tauri";
@@ -26,7 +26,7 @@ export function ModStorageSection({ settings, onSave }: ModStorageSectionProps) 
   }
 
   return (
-    <SectionCard title="Mod Storage">
+    <SectionCard title="Mod Storage" icon={<LuHardDrive className="h-5 w-5" />}>
       <div className="space-y-3">
         <span className="block text-sm font-medium text-surface-400">Storage Location</span>
         <div className="flex gap-2">
