@@ -16,9 +16,12 @@ export function useBulkInstallMods() {
     onSuccess: (result) => {
       if (result.installed.length > 0) {
         queryClient.setQueryData<InstalledMod[]>(libraryKeys.mods(), (old) =>
-          old ? [...old, ...result.installed] : result.installed,
+          old ? [...result.installed, ...old] : result.installed,
         );
       }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: libraryKeys.mods() });
     },
   });
 }

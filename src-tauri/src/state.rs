@@ -159,6 +159,9 @@ pub struct Settings {
     /// Trusted domains for protocol installs. Downloads are only allowed from these domains.
     #[serde(default = "default_trusted_domains")]
     pub trusted_domains: Vec<String>,
+    /// Whether the library file watcher is enabled. Default: false.
+    #[serde(default)]
+    pub watcher_enabled: bool,
 }
 
 impl Default for Settings {
@@ -180,6 +183,7 @@ impl Default for Settings {
             kill_league_hotkey: None,
             kill_league_stops_patcher: true,
             trusted_domains: default_trusted_domains(),
+            watcher_enabled: false,
         }
     }
 }
@@ -226,6 +230,7 @@ mod tests {
             kill_league_hotkey: None,
             kill_league_stops_patcher: true,
             trusted_domains: vec!["runeforge.dev".to_string()],
+            watcher_enabled: false,
         };
         let json = serde_json::to_string(&settings).unwrap();
         let deserialized: Settings = serde_json::from_str(&json).unwrap();

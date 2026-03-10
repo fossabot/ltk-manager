@@ -2,28 +2,52 @@ mod inspect;
 mod library;
 mod migration;
 mod profiles;
+pub(crate) mod watcher;
 
 pub use migration::*;
 
 pub use inspect::{inspect_modpkg_file, ModpkgInfo};
 
-use crate::error::{AppError, AppResult};
+use crate::error::{AppError, AppResult, MutexResultExt};
 use crate::state::{get_app_data_dir, Settings};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
 use ts_rs::TS;
 use uuid::Uuid;
 
+/// Cooldown period after a mutation during which the watcher ignores events.
+/// Must be longer than the debouncer window (2 s) plus margin for delayed
+/// Windows filesystem notifications.
+pub(crate) const WATCHER_SUPPRESS_SECS: i64 = 10;
+
 /// Managed struct that encapsulates mod library operations.
 ///
-/// Holds only the `AppHandle` (constant for app lifetime).
+/// All index operations are serialized through `index_lock` to prevent
+/// concurrent reads/writes from clobbering each other.
 /// Settings are passed per-call since they can change at runtime.
-#[derive(Clone)]
 pub struct ModLibrary {
     app_handle: AppHandle,
+    index_lock: Arc<Mutex<()>>,
+    /// Epoch-millis timestamp of the last `mutate_index` completion.
+    /// The file watcher skips events that arrive within [`WATCHER_SUPPRESS_SECS`]
+    /// of this timestamp.
+    pub(crate) last_mutation_epoch_ms: Arc<AtomicI64>,
+}
+
+impl Clone for ModLibrary {
+    fn clone(&self) -> Self {
+        Self {
+            app_handle: self.app_handle.clone(),
+            index_lock: Arc::clone(&self.index_lock),
+            last_mutation_epoch_ms: Arc::clone(&self.last_mutation_epoch_ms),
+        }
+    }
 }
 
 /// Tauri managed state wrapper for `ModLibrary`.
@@ -33,6 +57,8 @@ impl ModLibrary {
     pub fn new(app_handle: &AppHandle) -> Self {
         Self {
             app_handle: app_handle.clone(),
+            index_lock: Arc::new(Mutex::new(())),
+            last_mutation_epoch_ms: Arc::new(AtomicI64::new(0)),
         }
     }
 
@@ -50,47 +76,59 @@ impl ModLibrary {
             .ok_or_else(|| AppError::Other("Failed to resolve mod storage directory".to_string()))
     }
 
-    /// Read-only index access: load index, run closure.
+    /// Run reconciliation on startup to clean up orphaned entries.
+    /// Returns `true` if the index was modified.
+    pub fn reconcile_on_startup(&self, settings: &Settings) -> AppResult<bool> {
+        let _lock = self.index_lock.lock().mutex_err()?;
+        let storage_dir = self.storage_dir(settings)?;
+        let (index, reconciled) = load_library_index(&storage_dir)?;
+        if reconciled {
+            save_library_index(&storage_dir, &index)?;
+        }
+        Ok(reconciled)
+    }
+
+    /// Read-only index access: acquire lock, load index, run closure.
+    /// Saves the index if reconciliation cleaned up orphaned entries.
     fn with_index<T>(
         &self,
         settings: &Settings,
         f: impl FnOnce(&Path, &LibraryIndex) -> AppResult<T>,
     ) -> AppResult<T> {
+        let _lock = self.index_lock.lock().mutex_err()?;
         let storage_dir = self.storage_dir(settings)?;
-        let index = load_library_index(&storage_dir)?;
+        let (index, reconciled) = load_library_index(&storage_dir)?;
+        if reconciled {
+            save_library_index(&storage_dir, &index)?;
+        }
         f(&storage_dir, &index)
     }
 
-    /// Mutate index: load, run closure, save, invalidate overlay.
+    /// Mutate index: acquire lock, load, run closure, save, invalidate overlay.
+    ///
+    /// Records the completion timestamp so the file watcher ignores filesystem
+    /// notifications caused by our own writes for [`WATCHER_SUPPRESS_SECS`].
     fn mutate_index<T>(
         &self,
         settings: &Settings,
         f: impl FnOnce(&Path, &mut LibraryIndex) -> AppResult<T>,
     ) -> AppResult<T> {
+        let _lock = self.index_lock.lock().mutex_err()?;
         let storage_dir = self.storage_dir(settings)?;
-        let mut index = load_library_index(&storage_dir)?;
+        let (mut index, _) = load_library_index(&storage_dir)?;
         let result = f(&storage_dir, &mut index)?;
         save_library_index(&storage_dir, &index)?;
-        if let Err(e) = self.invalidate_overlay(settings) {
+        if let Err(e) = invalidate_overlay_for_profile(&storage_dir, &index) {
             tracing::warn!("Failed to invalidate overlay: {}", e);
         }
-        Ok(result)
-    }
 
-    /// Delete the active profile's `overlay.json` to force the next build to rebuild.
-    fn invalidate_overlay(&self, settings: &Settings) -> AppResult<()> {
-        let storage_dir = self.storage_dir(settings)?;
-        let index = load_library_index(&storage_dir)?;
-        let active_profile = get_active_profile(&index)?;
-        let overlay_json = storage_dir
-            .join("profiles")
-            .join(active_profile.slug.as_str())
-            .join("overlay.json");
-        if overlay_json.exists() {
-            std::fs::remove_file(&overlay_json)?;
-            tracing::info!("Invalidated overlay for profile {}", active_profile.slug);
-        }
-        Ok(())
+        let now_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as i64;
+        self.last_mutation_epoch_ms.store(now_ms, Ordering::SeqCst);
+
+        Ok(result)
     }
 }
 
@@ -309,17 +347,22 @@ pub(super) fn library_index_path(storage_dir: &Path) -> PathBuf {
     storage_dir.join("library.json")
 }
 
-/// Load the library index from disk.
-/// Creates the index file if it doesn't exist.
-pub(super) fn load_library_index(storage_dir: &Path) -> AppResult<LibraryIndex> {
+/// Load the library index from disk, reconciling any orphaned entries in memory.
+/// Returns `(index, reconciled)` — the caller is responsible for saving if needed.
+/// Creates a default index if the file doesn't exist.
+pub(super) fn load_library_index(storage_dir: &Path) -> AppResult<(LibraryIndex, bool)> {
     fs::create_dir_all(storage_dir)?;
 
     let path = library_index_path(storage_dir);
     if !path.exists() {
-        return Ok(LibraryIndex::default());
+        return Ok((LibraryIndex::default(), false));
     }
 
-    serde_json::from_str(&fs::read_to_string(path)?).map_err(AppError::from)
+    let mut index: LibraryIndex =
+        serde_json::from_str(&fs::read_to_string(&path)?).map_err(AppError::from)?;
+
+    let reconciled = reconcile_library_index(storage_dir, &mut index);
+    Ok((index, reconciled))
 }
 
 pub(super) fn save_library_index(storage_dir: &Path, index: &LibraryIndex) -> AppResult<()> {
@@ -328,6 +371,112 @@ pub(super) fn save_library_index(storage_dir: &Path, index: &LibraryIndex) -> Ap
     let contents = serde_json::to_string_pretty(index)?;
     fs::write(path, contents)?;
     Ok(())
+}
+
+/// Delete the active profile's `overlay.json` to force the next build to rebuild.
+fn invalidate_overlay_for_profile(storage_dir: &Path, index: &LibraryIndex) -> AppResult<()> {
+    let active_profile = get_active_profile(index)?;
+    let overlay_json = storage_dir
+        .join("profiles")
+        .join(active_profile.slug.as_str())
+        .join("overlay.json");
+    if overlay_json.exists() {
+        std::fs::remove_file(&overlay_json)?;
+        tracing::info!("Invalidated overlay for profile {}", active_profile.slug);
+    }
+    Ok(())
+}
+
+/// Remove mod entries whose metadata or archive files no longer exist on disk,
+/// clean up stale references in all profiles, and ensure all profiles list all
+/// valid mods in their `mod_order`. Returns `true` if changes were made.
+fn reconcile_library_index(storage_dir: &Path, index: &mut LibraryIndex) -> bool {
+    let mut changed = false;
+
+    // 1. Remove orphaned mod entries (files missing from disk)
+    let orphaned_ids: Vec<String> = index
+        .mods
+        .iter()
+        .filter(|entry| {
+            let metadata_ok = entry
+                .metadata_dir(storage_dir)
+                .join("mod.config.json")
+                .exists();
+            let archive_ok = entry.archive_path(storage_dir).exists();
+            !metadata_ok || !archive_ok
+        })
+        .map(|entry| entry.id.clone())
+        .collect();
+
+    if !orphaned_ids.is_empty() {
+        let orphaned_set: std::collections::HashSet<&str> =
+            orphaned_ids.iter().map(|s| s.as_str()).collect();
+
+        for id in &orphaned_ids {
+            tracing::warn!(
+                "Removing orphaned mod entry {} (files missing from disk)",
+                id
+            );
+        }
+
+        index.mods.retain(|m| !orphaned_set.contains(m.id.as_str()));
+
+        for profile in &mut index.profiles {
+            profile
+                .mod_order
+                .retain(|id| !orphaned_set.contains(id.as_str()));
+            profile
+                .enabled_mods
+                .retain(|id| !orphaned_set.contains(id.as_str()));
+        }
+
+        tracing::info!(
+            "Reconciled library index: removed {} orphaned mod entries",
+            orphaned_ids.len()
+        );
+        changed = true;
+    }
+
+    // 2. Ensure all profiles contain all valid mods in their mod_order.
+    // Mods installed while a different profile was active won't appear in
+    // that profile's mod_order, causing reorder validation mismatches.
+    let valid_ids: std::collections::HashSet<&str> =
+        index.mods.iter().map(|m| m.id.as_str()).collect();
+
+    for profile in &mut index.profiles {
+        // Remove any profile references to mods not in the index
+        let before = profile.mod_order.len() + profile.enabled_mods.len();
+        profile
+            .mod_order
+            .retain(|id| valid_ids.contains(id.as_str()));
+        profile
+            .enabled_mods
+            .retain(|id| valid_ids.contains(id.as_str()));
+        if profile.mod_order.len() + profile.enabled_mods.len() != before {
+            changed = true;
+        }
+
+        // Add missing mods to the end of mod_order
+        let order_set: std::collections::HashSet<&str> =
+            profile.mod_order.iter().map(|s| s.as_str()).collect();
+        let missing: Vec<String> = index
+            .mods
+            .iter()
+            .filter(|m| !order_set.contains(m.id.as_str()))
+            .map(|m| m.id.clone())
+            .collect();
+        for id in missing {
+            tracing::info!(
+                "Adding missing mod {} to profile '{}' mod_order",
+                id,
+                profile.name
+            );
+            profile.mod_order.push(id);
+            changed = true;
+        }
+    }
+
+    changed
 }
 
 pub(super) fn get_active_profile(index: &LibraryIndex) -> AppResult<&Profile> {
@@ -477,7 +626,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let index = LibraryIndex::default();
         save_library_index(dir.path(), &index).unwrap();
-        let loaded = load_library_index(dir.path()).unwrap();
+        let (loaded, reconciled) = load_library_index(dir.path()).unwrap();
+        assert!(!reconciled);
         assert_eq!(loaded.profiles.len(), 1);
         assert_eq!(loaded.profiles[0].name, "Default");
         assert_eq!(loaded.active_profile_id, loaded.profiles[0].id);
@@ -486,7 +636,8 @@ mod tests {
     #[test]
     fn load_library_index_returns_default_when_no_file() {
         let dir = tempfile::tempdir().unwrap();
-        let index = load_library_index(dir.path()).unwrap();
+        let (index, reconciled) = load_library_index(dir.path()).unwrap();
+        assert!(!reconciled);
         assert_eq!(index.profiles.len(), 1);
         assert_eq!(index.profiles[0].name, "Default");
     }
@@ -552,5 +703,361 @@ mod tests {
     fn get_profile_by_id_not_found() {
         let index = LibraryIndex::default();
         assert!(get_profile_by_id(&index, "nonexistent-id").is_err());
+    }
+
+    // ── Reconciliation ──
+
+    fn make_test_entry(id: &str, format: ModArchiveFormat) -> LibraryModEntry {
+        LibraryModEntry {
+            id: id.to_string(),
+            installed_at: Utc::now(),
+            format,
+        }
+    }
+
+    fn make_test_profile(
+        id: &str,
+        name: &str,
+        mod_order: Vec<&str>,
+        enabled: Vec<&str>,
+    ) -> Profile {
+        Profile {
+            id: id.to_string(),
+            name: name.to_string(),
+            slug: ProfileSlug::from_name(name)
+                .unwrap_or_else(|| ProfileSlug("default".to_string())),
+            mod_order: mod_order.into_iter().map(String::from).collect(),
+            enabled_mods: enabled.into_iter().map(String::from).collect(),
+            created_at: Utc::now(),
+            last_used: Utc::now(),
+        }
+    }
+
+    /// Place the required metadata + archive files on disk so the mod is considered valid.
+    fn place_mod_files(storage_dir: &Path, id: &str, format: ModArchiveFormat) {
+        let meta_dir = storage_dir.join("mods").join(id);
+        fs::create_dir_all(&meta_dir).unwrap();
+        fs::write(meta_dir.join("mod.config.json"), "{}").unwrap();
+
+        let archive_dir = storage_dir.join("archives");
+        fs::create_dir_all(&archive_dir).unwrap();
+        fs::write(
+            archive_dir.join(format!("{}.{}", id, format.extension())),
+            b"fake",
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn reconcile_no_changes_returns_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let entry = make_test_entry("mod-a", ModArchiveFormat::Modpkg);
+        place_mod_files(dir.path(), "mod-a", ModArchiveFormat::Modpkg);
+
+        let mut index = LibraryIndex {
+            mods: vec![entry],
+            profiles: vec![make_test_profile(
+                "p1",
+                "Default",
+                vec!["mod-a"],
+                vec!["mod-a"],
+            )],
+            active_profile_id: "p1".to_string(),
+        };
+
+        assert!(!reconcile_library_index(dir.path(), &mut index));
+        assert_eq!(index.mods.len(), 1);
+        assert_eq!(index.profiles[0].mod_order, vec!["mod-a"]);
+        assert_eq!(index.profiles[0].enabled_mods, vec!["mod-a"]);
+    }
+
+    #[test]
+    fn reconcile_removes_orphaned_mod_missing_archive() {
+        let dir = tempfile::tempdir().unwrap();
+        let entry = make_test_entry("mod-a", ModArchiveFormat::Modpkg);
+
+        // Only place metadata, no archive
+        let meta_dir = dir.path().join("mods").join("mod-a");
+        fs::create_dir_all(&meta_dir).unwrap();
+        fs::write(meta_dir.join("mod.config.json"), "{}").unwrap();
+
+        let mut index = LibraryIndex {
+            mods: vec![entry],
+            profiles: vec![make_test_profile(
+                "p1",
+                "Default",
+                vec!["mod-a"],
+                vec!["mod-a"],
+            )],
+            active_profile_id: "p1".to_string(),
+        };
+
+        assert!(reconcile_library_index(dir.path(), &mut index));
+        assert!(index.mods.is_empty());
+        assert!(index.profiles[0].mod_order.is_empty());
+        assert!(index.profiles[0].enabled_mods.is_empty());
+    }
+
+    #[test]
+    fn reconcile_removes_orphaned_mod_missing_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let entry = make_test_entry("mod-a", ModArchiveFormat::Modpkg);
+
+        // Only place archive, no metadata
+        let archive_dir = dir.path().join("archives");
+        fs::create_dir_all(&archive_dir).unwrap();
+        fs::write(archive_dir.join("mod-a.modpkg"), b"fake").unwrap();
+
+        let mut index = LibraryIndex {
+            mods: vec![entry],
+            profiles: vec![make_test_profile(
+                "p1",
+                "Default",
+                vec!["mod-a"],
+                vec!["mod-a"],
+            )],
+            active_profile_id: "p1".to_string(),
+        };
+
+        assert!(reconcile_library_index(dir.path(), &mut index));
+        assert!(index.mods.is_empty());
+    }
+
+    #[test]
+    fn reconcile_removes_orphaned_mod_missing_both() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let mut index = LibraryIndex {
+            mods: vec![make_test_entry("ghost", ModArchiveFormat::Fantome)],
+            profiles: vec![make_test_profile(
+                "p1",
+                "Default",
+                vec!["ghost"],
+                vec!["ghost"],
+            )],
+            active_profile_id: "p1".to_string(),
+        };
+
+        assert!(reconcile_library_index(dir.path(), &mut index));
+        assert!(index.mods.is_empty());
+        assert!(index.profiles[0].mod_order.is_empty());
+        assert!(index.profiles[0].enabled_mods.is_empty());
+    }
+
+    #[test]
+    fn reconcile_keeps_valid_mods_removes_orphans() {
+        let dir = tempfile::tempdir().unwrap();
+        place_mod_files(dir.path(), "valid", ModArchiveFormat::Modpkg);
+        // "orphan" has no files on disk
+
+        let mut index = LibraryIndex {
+            mods: vec![
+                make_test_entry("valid", ModArchiveFormat::Modpkg),
+                make_test_entry("orphan", ModArchiveFormat::Modpkg),
+            ],
+            profiles: vec![make_test_profile(
+                "p1",
+                "Default",
+                vec!["valid", "orphan"],
+                vec!["valid", "orphan"],
+            )],
+            active_profile_id: "p1".to_string(),
+        };
+
+        assert!(reconcile_library_index(dir.path(), &mut index));
+        assert_eq!(index.mods.len(), 1);
+        assert_eq!(index.mods[0].id, "valid");
+        assert_eq!(index.profiles[0].mod_order, vec!["valid"]);
+        assert_eq!(index.profiles[0].enabled_mods, vec!["valid"]);
+    }
+
+    #[test]
+    fn reconcile_cleans_multiple_orphans() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let mut index = LibraryIndex {
+            mods: vec![
+                make_test_entry("ghost-1", ModArchiveFormat::Modpkg),
+                make_test_entry("ghost-2", ModArchiveFormat::Fantome),
+                make_test_entry("ghost-3", ModArchiveFormat::Modpkg),
+            ],
+            profiles: vec![make_test_profile(
+                "p1",
+                "Default",
+                vec!["ghost-1", "ghost-2", "ghost-3"],
+                vec!["ghost-1"],
+            )],
+            active_profile_id: "p1".to_string(),
+        };
+
+        assert!(reconcile_library_index(dir.path(), &mut index));
+        assert!(index.mods.is_empty());
+        assert!(index.profiles[0].mod_order.is_empty());
+        assert!(index.profiles[0].enabled_mods.is_empty());
+    }
+
+    #[test]
+    fn reconcile_adds_missing_mods_to_profile_mod_order() {
+        let dir = tempfile::tempdir().unwrap();
+        place_mod_files(dir.path(), "mod-a", ModArchiveFormat::Modpkg);
+        place_mod_files(dir.path(), "mod-b", ModArchiveFormat::Modpkg);
+
+        // Profile only knows about mod-a, but mod-b exists in index
+        let mut index = LibraryIndex {
+            mods: vec![
+                make_test_entry("mod-a", ModArchiveFormat::Modpkg),
+                make_test_entry("mod-b", ModArchiveFormat::Modpkg),
+            ],
+            profiles: vec![make_test_profile(
+                "p1",
+                "Default",
+                vec!["mod-a"],
+                vec!["mod-a"],
+            )],
+            active_profile_id: "p1".to_string(),
+        };
+
+        assert!(reconcile_library_index(dir.path(), &mut index));
+        assert_eq!(index.profiles[0].mod_order, vec!["mod-a", "mod-b"]);
+        // enabled_mods should be unchanged — missing mods are added disabled
+        assert_eq!(index.profiles[0].enabled_mods, vec!["mod-a"]);
+    }
+
+    #[test]
+    fn reconcile_adds_missing_mods_to_multiple_profiles() {
+        let dir = tempfile::tempdir().unwrap();
+        place_mod_files(dir.path(), "mod-a", ModArchiveFormat::Modpkg);
+        place_mod_files(dir.path(), "mod-b", ModArchiveFormat::Fantome);
+
+        let mut index = LibraryIndex {
+            mods: vec![
+                make_test_entry("mod-a", ModArchiveFormat::Modpkg),
+                make_test_entry("mod-b", ModArchiveFormat::Fantome),
+            ],
+            profiles: vec![
+                make_test_profile("p1", "Default", vec!["mod-a"], vec![]),
+                make_test_profile("p2", "Ranked", vec!["mod-b"], vec!["mod-b"]),
+            ],
+            active_profile_id: "p1".to_string(),
+        };
+
+        assert!(reconcile_library_index(dir.path(), &mut index));
+        assert_eq!(index.profiles[0].mod_order, vec!["mod-a", "mod-b"]);
+        assert_eq!(index.profiles[1].mod_order, vec!["mod-b", "mod-a"]);
+    }
+
+    #[test]
+    fn reconcile_removes_stale_profile_references() {
+        let dir = tempfile::tempdir().unwrap();
+        place_mod_files(dir.path(), "mod-a", ModArchiveFormat::Modpkg);
+
+        // Profile references "deleted-mod" which isn't in index.mods at all
+        let mut index = LibraryIndex {
+            mods: vec![make_test_entry("mod-a", ModArchiveFormat::Modpkg)],
+            profiles: vec![make_test_profile(
+                "p1",
+                "Default",
+                vec!["mod-a", "deleted-mod"],
+                vec!["mod-a", "deleted-mod"],
+            )],
+            active_profile_id: "p1".to_string(),
+        };
+
+        assert!(reconcile_library_index(dir.path(), &mut index));
+        assert_eq!(index.profiles[0].mod_order, vec!["mod-a"]);
+        assert_eq!(index.profiles[0].enabled_mods, vec!["mod-a"]);
+    }
+
+    #[test]
+    fn reconcile_handles_orphan_removal_and_missing_mod_order_together() {
+        let dir = tempfile::tempdir().unwrap();
+        place_mod_files(dir.path(), "mod-a", ModArchiveFormat::Modpkg);
+        place_mod_files(dir.path(), "mod-b", ModArchiveFormat::Modpkg);
+        // "orphan" has no files
+
+        // Profile 1 has orphan + mod-a, missing mod-b
+        // Profile 2 has only orphan
+        let mut index = LibraryIndex {
+            mods: vec![
+                make_test_entry("mod-a", ModArchiveFormat::Modpkg),
+                make_test_entry("mod-b", ModArchiveFormat::Modpkg),
+                make_test_entry("orphan", ModArchiveFormat::Fantome),
+            ],
+            profiles: vec![
+                make_test_profile("p1", "Default", vec!["orphan", "mod-a"], vec!["orphan"]),
+                make_test_profile("p2", "Ranked", vec!["orphan"], vec!["orphan"]),
+            ],
+            active_profile_id: "p1".to_string(),
+        };
+
+        assert!(reconcile_library_index(dir.path(), &mut index));
+        assert_eq!(index.mods.len(), 2);
+
+        // Profile 1: orphan removed, mod-b added
+        assert_eq!(index.profiles[0].mod_order, vec!["mod-a", "mod-b"]);
+        assert!(index.profiles[0].enabled_mods.is_empty());
+
+        // Profile 2: orphan removed, both mods added
+        assert_eq!(index.profiles[1].mod_order, vec!["mod-a", "mod-b"]);
+        assert!(index.profiles[1].enabled_mods.is_empty());
+    }
+
+    #[test]
+    fn reconcile_empty_index_returns_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut index = LibraryIndex {
+            mods: Vec::new(),
+            profiles: vec![make_test_profile("p1", "Default", vec![], vec![])],
+            active_profile_id: "p1".to_string(),
+        };
+
+        assert!(!reconcile_library_index(dir.path(), &mut index));
+    }
+
+    #[test]
+    fn load_library_index_reconciles_orphaned_entries() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // Save an index with a mod that has no files on disk
+        let index = LibraryIndex {
+            mods: vec![make_test_entry("ghost", ModArchiveFormat::Modpkg)],
+            profiles: vec![make_test_profile(
+                "p1",
+                "Default",
+                vec!["ghost"],
+                vec!["ghost"],
+            )],
+            active_profile_id: "p1".to_string(),
+        };
+        save_library_index(dir.path(), &index).unwrap();
+
+        let (loaded, reconciled) = load_library_index(dir.path()).unwrap();
+        assert!(reconciled);
+        assert!(loaded.mods.is_empty());
+        assert!(loaded.profiles[0].mod_order.is_empty());
+        assert!(loaded.profiles[0].enabled_mods.is_empty());
+    }
+
+    #[test]
+    fn load_library_index_no_reconciliation_when_clean() {
+        let dir = tempfile::tempdir().unwrap();
+        place_mod_files(dir.path(), "mod-a", ModArchiveFormat::Modpkg);
+
+        let index = LibraryIndex {
+            mods: vec![make_test_entry("mod-a", ModArchiveFormat::Modpkg)],
+            profiles: vec![make_test_profile(
+                "p1",
+                "Default",
+                vec!["mod-a"],
+                vec!["mod-a"],
+            )],
+            active_profile_id: "p1".to_string(),
+        };
+        save_library_index(dir.path(), &index).unwrap();
+
+        let (loaded, reconciled) = load_library_index(dir.path()).unwrap();
+        assert!(!reconciled);
+        assert_eq!(loaded.mods.len(), 1);
+        assert_eq!(loaded.profiles[0].mod_order, vec!["mod-a"]);
     }
 }

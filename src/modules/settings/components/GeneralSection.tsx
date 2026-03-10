@@ -8,6 +8,7 @@ import { MinimizeToTraySection } from "./MinimizeToTraySection";
 import { ModStorageSection } from "./ModStorageSection";
 import { PatchingSection } from "./PatchingSection";
 import { TrustedDomainsSection } from "./TrustedDomainsSection";
+import { WatcherSection } from "./WatcherSection";
 import { WorkshopSection } from "./WorkshopSection";
 
 interface GeneralSectionProps {
@@ -24,6 +25,7 @@ export function GeneralSection({ settings, onSave }: GeneralSectionProps) {
       <PatchingSection settings={settings} onSave={onSave} />
       <MinimizeToTraySection settings={settings} onSave={onSave} />
       <TrustedDomainsSection settings={settings} onSave={onSave} />
+      <WatcherSection settings={settings} onSave={onSave} />
       <ModStorageSection settings={settings} onSave={onSave} />
       <WorkshopSection settings={settings} onSave={onSave} />
       <MigrationSection onImport={() => setMigrationOpen(true)} />

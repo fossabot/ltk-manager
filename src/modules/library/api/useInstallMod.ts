@@ -17,10 +17,12 @@ export function useInstallMod() {
       return unwrapForQuery(result);
     },
     onSuccess: (newMod) => {
-      // Add the new mod to the cache
       queryClient.setQueryData<InstalledMod[]>(libraryKeys.mods(), (old) =>
-        old ? [...old, newMod] : [newMod],
+        old ? [newMod, ...old] : [newMod],
       );
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: libraryKeys.mods() });
     },
   });
 }

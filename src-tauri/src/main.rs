@@ -114,6 +114,16 @@ fn main() {
             // Run first-run initialization (auto-detect League path)
             initialize_first_run(app_handle, &settings_state);
 
+            // Reconcile library index (clean up orphaned mod entries from disk changes)
+            {
+                let settings = settings_state.0.lock().unwrap();
+                match mod_library.0.reconcile_on_startup(&settings) {
+                    Ok(true) => tracing::info!("Library index reconciled on startup"),
+                    Ok(false) => {}
+                    Err(e) => tracing::warn!("Failed to reconcile library on startup: {}", e),
+                }
+            }
+
             // Register persisted global hotkeys
             let hotkey_manager = hotkeys::HotkeyManager::new(app_handle);
             {
@@ -146,6 +156,15 @@ fn main() {
                     }
                 })
                 .build(app)?;
+
+            // Watch archives/mods directories for external changes (if enabled)
+            {
+                let settings_state: tauri::State<'_, SettingsState> = app_handle.state();
+                let settings = settings_state.0.lock().unwrap();
+                if settings.watcher_enabled {
+                    mods::watcher::start_library_watcher(app_handle);
+                }
+            }
 
             // Check for deep-link URLs passed at launch
             if let Ok(Some(urls)) = app.deep_link().get_current() {

@@ -25,8 +25,11 @@ export function useProtocolInstall() {
     onSuccess: (newMod) => {
       useDeepLinkStore.getState().setStatus("complete");
       queryClient.setQueryData<InstalledMod[]>(libraryKeys.mods(), (old) =>
-        old ? [...old, newMod] : [newMod],
+        old ? [newMod, ...old] : [newMod],
       );
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: libraryKeys.mods() });
     },
     onError: (error) => {
       useDeepLinkStore.getState().setError(error.message);

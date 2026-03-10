@@ -58,4 +58,8 @@ export type Settings = {
    * Trusted domains for protocol installs. Downloads are only allowed from these domains.
    */
   trustedDomains: Array<string>;
+  /**
+   * Whether the library file watcher is enabled. Default: false.
+   */
+  watcherEnabled: boolean;
 };

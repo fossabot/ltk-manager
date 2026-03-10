@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 use super::{
-    load_library_index, save_library_index, BulkInstallError, BulkInstallResult, InstallProgress,
-    InstalledMod, LibraryIndex, LibraryModEntry, ModArchiveFormat, ModLayer, ModLibrary,
+    BulkInstallError, BulkInstallResult, InstallProgress, InstalledMod, LibraryIndex,
+    LibraryModEntry, ModArchiveFormat, ModLayer, ModLibrary,
 };
 use tauri::Emitter;
 
@@ -59,16 +59,16 @@ impl ModLibrary {
                 .find(|p| p.id == active_profile_id)
                 .ok_or_else(|| AppError::Other("Active profile not found".to_string()))?;
 
-            // Validate that the provided IDs exactly match all installed mods
-            let mut installed_sorted: Vec<&str> =
-                index.mods.iter().map(|m| m.id.as_str()).collect();
-            installed_sorted.sort();
+            // Validate that the provided IDs exactly match the profile's mod order
+            let mut expected_sorted: Vec<&str> =
+                profile.mod_order.iter().map(|s| s.as_str()).collect();
+            expected_sorted.sort();
             let mut new_sorted: Vec<&str> = mod_ids.iter().map(|s| s.as_str()).collect();
             new_sorted.sort();
 
-            if installed_sorted != new_sorted {
+            if expected_sorted != new_sorted {
                 return Err(AppError::ValidationFailed(
-                    "Provided mod IDs do not match the installed mods".to_string(),
+                    "Provided mod IDs do not match the profile's mod order".to_string(),
                 ));
             }
 
@@ -101,7 +101,7 @@ impl ModLibrary {
 
     /// Install multiple mods in a single batch operation.
     ///
-    /// Loads `library.json` once, installs each mod, saves once, and invalidates
+    /// Acquires the index lock once, installs each mod, saves once, and invalidates
     /// the overlay once. Emits `"install-progress"` events per file.
     pub fn install_mods_from_packages(
         &self,
@@ -115,51 +115,47 @@ impl ModLibrary {
             });
         }
 
-        let storage_dir = self.storage_dir(settings)?;
-        let mut index = load_library_index(&storage_dir)?;
+        let app_handle = self.app_handle().clone();
+        let file_paths = file_paths.to_vec();
 
-        let total = file_paths.len();
-        let mut installed = Vec::new();
-        let mut failed = Vec::new();
+        self.mutate_index(settings, |storage_dir, index| {
+            let total = file_paths.len();
+            let mut installed = Vec::new();
+            let mut failed = Vec::new();
 
-        for (i, file_path) in file_paths.iter().enumerate() {
-            let file_name = Path::new(file_path)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or(file_path)
-                .to_string();
+            for (i, file_path) in file_paths.iter().enumerate() {
+                let file_name = Path::new(file_path)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or(file_path)
+                    .to_string();
 
-            let _ = self.app_handle().emit(
-                "install-progress",
-                InstallProgress {
-                    current: i + 1,
-                    total,
-                    current_file: file_name.clone(),
-                },
-            );
+                let _ = app_handle.emit(
+                    "install-progress",
+                    InstallProgress {
+                        current: i + 1,
+                        total,
+                        current_file: file_name.clone(),
+                    },
+                );
 
-            match install_single_mod_to_index(&storage_dir, &mut index, file_path) {
-                Ok((_entry, mod_info)) => {
-                    installed.push(mod_info);
-                }
-                Err(e) => {
-                    tracing::warn!("Failed to install {}: {}", file_path, e);
-                    failed.push(BulkInstallError {
-                        file_path: file_path.clone(),
-                        file_name,
-                        message: e.to_string(),
-                    });
+                match install_single_mod_to_index(storage_dir, index, file_path) {
+                    Ok((_entry, mod_info)) => {
+                        installed.push(mod_info);
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to install {}: {}", file_path, e);
+                        failed.push(BulkInstallError {
+                            file_path: file_path.clone(),
+                            file_name,
+                            message: e.to_string(),
+                        });
+                    }
                 }
             }
-        }
 
-        save_library_index(&storage_dir, &index)?;
-
-        if let Err(e) = self.invalidate_overlay(settings) {
-            tracing::warn!("Failed to invalidate overlay after bulk install: {}", e);
-        }
-
-        Ok(BulkInstallResult { installed, failed })
+            Ok(BulkInstallResult { installed, failed })
+        })
     }
 
     pub fn toggle_mod_enabled(

@@ -7,4 +7,5 @@ export { MinimizeToTraySection } from "./MinimizeToTraySection";
 export { ModStorageSection } from "./ModStorageSection";
 export { PatchingSection } from "./PatchingSection";
 export { TrustedDomainsSection } from "./TrustedDomainsSection";
+export { WatcherSection } from "./WatcherSection";
 export { WorkshopSection } from "./WorkshopSection";

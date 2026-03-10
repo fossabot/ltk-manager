@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 
 import { ProtocolInstallDialog, useDeepLinkListener } from "@/modules/deep-link";
+import { useLibraryWatcher } from "@/modules/library";
 import { StatusBar } from "@/modules/patcher";
 import { useAppInfo, useCheckSetupRequired } from "@/modules/settings";
 import { DevConsole, TitleBar, useDevLogStream } from "@/modules/shell";
@@ -18,6 +19,7 @@ function RootLayout() {
 
   useDevLogStream();
   useDeepLinkListener();
+  useLibraryWatcher();
 
   useHotkeys("ctrl+1", () => navigate({ to: "/" }), { preventDefault: true });
   useHotkeys("ctrl+2", () => navigate({ to: "/workshop" }), { preventDefault: true });
