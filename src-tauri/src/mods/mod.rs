@@ -76,20 +76,22 @@ impl ModLibrary {
             .ok_or_else(|| AppError::Other("Failed to resolve mod storage directory".to_string()))
     }
 
-    /// Run reconciliation to clean up orphaned entries.
+    /// Run reconciliation to clean up orphaned entries, discover new archives,
+    /// and refresh stale metadata.
     /// Returns `true` if the index was modified.
     pub fn reconcile_index(&self, settings: &Settings) -> AppResult<bool> {
         let _lock = self.index_lock.lock().mutex_err()?;
         let storage_dir = self.storage_dir(settings)?;
-        let (index, reconciled) = load_library_index(&storage_dir)?;
+        let mut index = load_library_index(&storage_dir)?;
+        let reconciled = reconcile_library_index(&storage_dir, &mut index);
         if reconciled {
             save_library_index(&storage_dir, &index)?;
+            self.stamp_mutation();
         }
         Ok(reconciled)
     }
 
     /// Read-only index access: acquire lock, load index, run closure.
-    /// Saves the index if reconciliation cleaned up orphaned entries.
     fn with_index<T>(
         &self,
         settings: &Settings,
@@ -97,10 +99,7 @@ impl ModLibrary {
     ) -> AppResult<T> {
         let _lock = self.index_lock.lock().mutex_err()?;
         let storage_dir = self.storage_dir(settings)?;
-        let (index, reconciled) = load_library_index(&storage_dir)?;
-        if reconciled {
-            save_library_index(&storage_dir, &index)?;
-        }
+        let index = load_library_index(&storage_dir)?;
         f(&storage_dir, &index)
     }
 
@@ -115,20 +114,22 @@ impl ModLibrary {
     ) -> AppResult<T> {
         let _lock = self.index_lock.lock().mutex_err()?;
         let storage_dir = self.storage_dir(settings)?;
-        let (mut index, _) = load_library_index(&storage_dir)?;
+        let mut index = load_library_index(&storage_dir)?;
         let result = f(&storage_dir, &mut index)?;
         save_library_index(&storage_dir, &index)?;
         if let Err(e) = invalidate_overlay_for_profile(&storage_dir, &index) {
             tracing::warn!("Failed to invalidate overlay: {}", e);
         }
+        self.stamp_mutation();
+        Ok(result)
+    }
 
+    fn stamp_mutation(&self) {
         let now_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis() as i64;
         self.last_mutation_epoch_ms.store(now_ms, Ordering::SeqCst);
-
-        Ok(result)
     }
 }
 
@@ -359,19 +360,18 @@ pub(super) fn library_index_path(storage_dir: &Path) -> PathBuf {
 /// Load the library index from disk, reconciling any orphaned entries in memory.
 /// Returns `(index, reconciled)` — the caller is responsible for saving if needed.
 /// Creates a default index if the file doesn't exist.
-pub(super) fn load_library_index(storage_dir: &Path) -> AppResult<(LibraryIndex, bool)> {
+pub(super) fn load_library_index(storage_dir: &Path) -> AppResult<LibraryIndex> {
     fs::create_dir_all(storage_dir)?;
 
     let path = library_index_path(storage_dir);
     if !path.exists() {
-        return Ok((LibraryIndex::default(), false));
+        return Ok(LibraryIndex::default());
     }
 
-    let mut index: LibraryIndex =
+    let index: LibraryIndex =
         serde_json::from_str(&fs::read_to_string(&path)?).map_err(AppError::from)?;
 
-    let reconciled = reconcile_library_index(storage_dir, &mut index);
-    Ok((index, reconciled))
+    Ok(index)
 }
 
 pub(super) fn save_library_index(storage_dir: &Path, index: &LibraryIndex) -> AppResult<()> {
@@ -553,11 +553,52 @@ fn discover_new_archives(storage_dir: &Path, index: &mut LibraryIndex) -> bool {
             }
             Err(e) => {
                 tracing::warn!("Skipping invalid archive {}: {}", path.display(), e);
+                cleanup_failed_discovery(&path, storage_dir);
             }
         }
     }
 
     changed
+}
+
+/// Remove a corrupt/invalid archive that failed discovery so it doesn't
+/// get retried on every subsequent reconciliation cycle.
+fn cleanup_failed_discovery(original_path: &Path, storage_dir: &Path) {
+    if let Err(e) = fs::remove_file(original_path) {
+        tracing::warn!(
+            "Failed to remove invalid archive {}: {}",
+            original_path.display(),
+            e
+        );
+    }
+
+    let archives_dir = storage_dir.join("archives");
+    let mods_dir = storage_dir.join("mods");
+
+    // Clean up any partial artifacts left by the failed install (UUID-named copies).
+    // install_single_mod_to_index copies the archive to {uuid}.{ext} and creates mods/{uuid}/
+    // before it can fail during metadata extraction.
+    if let Ok(entries) = fs::read_dir(&archives_dir) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            let is_archive = p
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(|ext| ModArchiveFormat::from_extension(ext).is_some());
+            if !is_archive {
+                continue;
+            }
+            if let Some(stem) = p.file_stem().and_then(|s| s.to_str()) {
+                let metadata_dir = mods_dir.join(stem);
+                let config_path = metadata_dir.join("mod.config.json");
+                if metadata_dir.is_dir() && !config_path.exists() {
+                    tracing::info!("Cleaning up partial install artifacts for {}", stem);
+                    let _ = fs::remove_file(&p);
+                    let _ = fs::remove_dir_all(&metadata_dir);
+                }
+            }
+        }
+    }
 }
 
 /// Re-extract metadata for mods whose archive is newer than the cached `mod.config.json`.
@@ -750,8 +791,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let index = LibraryIndex::default();
         save_library_index(dir.path(), &index).unwrap();
-        let (loaded, reconciled) = load_library_index(dir.path()).unwrap();
-        assert!(!reconciled);
+        let loaded = load_library_index(dir.path()).unwrap();
         assert_eq!(loaded.profiles.len(), 1);
         assert_eq!(loaded.profiles[0].name, "Default");
         assert_eq!(loaded.active_profile_id, loaded.profiles[0].id);
@@ -760,8 +800,7 @@ mod tests {
     #[test]
     fn load_library_index_returns_default_when_no_file() {
         let dir = tempfile::tempdir().unwrap();
-        let (index, reconciled) = load_library_index(dir.path()).unwrap();
-        assert!(!reconciled);
+        let index = load_library_index(dir.path()).unwrap();
         assert_eq!(index.profiles.len(), 1);
         assert_eq!(index.profiles[0].name, "Default");
     }
@@ -1155,7 +1194,8 @@ mod tests {
         };
         save_library_index(dir.path(), &index).unwrap();
 
-        let (loaded, reconciled) = load_library_index(dir.path()).unwrap();
+        let mut loaded = load_library_index(dir.path()).unwrap();
+        let reconciled = reconcile_library_index(dir.path(), &mut loaded);
         assert!(reconciled);
         assert!(loaded.mods.is_empty());
         assert!(loaded.profiles[0].mod_order.is_empty());
@@ -1246,11 +1286,10 @@ mod tests {
             active_profile_id: "p1".to_string(),
         };
 
-        // Should not crash, the corrupt file is skipped
+        // Should not crash, the corrupt file is cleaned up to prevent retry loops
         assert!(!reconcile_library_index(dir.path(), &mut index));
         assert!(index.mods.is_empty());
-        // Corrupt file should still exist (not deleted)
-        assert!(archives_dir.join("corrupt.fantome").exists());
+        assert!(!archives_dir.join("corrupt.fantome").exists());
     }
 
     #[test]
@@ -1332,7 +1371,8 @@ mod tests {
         };
         save_library_index(dir.path(), &index).unwrap();
 
-        let (loaded, reconciled) = load_library_index(dir.path()).unwrap();
+        let mut loaded = load_library_index(dir.path()).unwrap();
+        let reconciled = reconcile_library_index(dir.path(), &mut loaded);
         assert!(!reconciled);
         assert_eq!(loaded.mods.len(), 1);
         assert_eq!(loaded.profiles[0].mod_order, vec!["mod-a"]);

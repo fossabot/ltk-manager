@@ -91,13 +91,13 @@ fn run_watcher(app_handle: &AppHandle) -> Result<(), Box<dyn std::error::Error>>
                     continue;
                 }
 
-                let dominated_by_internal_event = events.iter().all(|e| match e.kind {
+                let all_json_events = events.iter().all(|e| match e.kind {
                     DebouncedEventKind::Any | DebouncedEventKind::AnyContinuous => {
                         e.path.extension().is_some_and(|ext| ext == "json")
                     }
                     _ => false,
                 });
-                if dominated_by_internal_event {
+                if all_json_events {
                     continue;
                 }
 
