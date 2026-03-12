@@ -40,5 +40,8 @@ export default defineConfig({
     // Produce source maps for debugging
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
     minify: !process.env.TAURI_ENV_DEBUG ? "esbuild" : false,
+
+    // Fallback to original minifier until @tailwindcss/vite supports Vite 8
+    cssMinify: "esbuild",
   },
 });
