@@ -1,9 +1,11 @@
 use crate::error::{AppError, AppResult};
 use crate::state::Settings;
+use camino::Utf8PathBuf;
 use chrono::Utc;
 use ltk_mod_project::{ModMap, ModProject, ModProjectLayer, ModTag};
 use ltk_modpkg::Modpkg;
-use std::fs;
+use ltk_overlay::{FantomeContent, ModpkgContent};
+use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
@@ -318,21 +320,23 @@ impl ModLibrary {
                     archive_path.display()
                 );
 
+                let utf8_archive_path =
+                    Utf8PathBuf::from_path_buf(archive_path.clone()).map_err(|p| {
+                        AppError::InvalidPath(format!("Non-UTF8 archive path: {}", p.display()))
+                    })?;
+
                 let content: Box<dyn ltk_overlay::ModContentProvider> = match entry.format {
-                    ModArchiveFormat::Fantome => {
-                        let file = std::fs::File::open(&archive_path)?;
-                        let provider = crate::overlay::fantome_content::FantomeContent::new(file)
+                    ModArchiveFormat::Fantome => Box::new(
+                        FantomeContent::new(File::open(&archive_path)?)
                             .map_err(|e| {
-                            AppError::Other(format!("Failed to open fantome archive: {}", e))
-                        })?;
-                        Box::new(provider)
-                    }
-                    ModArchiveFormat::Modpkg => {
-                        let file = std::fs::File::open(&archive_path)?;
-                        let modpkg = ltk_modpkg::Modpkg::mount_from_reader(file)
-                            .map_err(|e| AppError::Modpkg(e.to_string()))?;
-                        Box::new(crate::overlay::modpkg_content::ModpkgContent::new(modpkg))
-                    }
+                                AppError::Other(format!("Failed to open fantome archive: {}", e))
+                            })?
+                            .with_archive_path(utf8_archive_path),
+                    ),
+                    ModArchiveFormat::Modpkg => Box::new(
+                        ModpkgContent::new(Modpkg::mount_from_reader(File::open(&archive_path)?)?)
+                            .with_archive_path(utf8_archive_path),
+                    ),
                 };
 
                 enabled_mods.push(ltk_overlay::EnabledMod {
@@ -582,13 +586,10 @@ pub(super) fn extract_fantome_metadata(file_path: &Path, metadata_dir: &Path) ->
 
 pub(super) fn extract_modpkg_metadata(file_path: &Path, metadata_dir: &Path) -> AppResult<()> {
     let file = std::fs::File::open(file_path)?;
-    let mut modpkg =
-        Modpkg::mount_from_reader(file).map_err(|e| AppError::Modpkg(e.to_string()))?;
+    let mut modpkg = Modpkg::mount_from_reader(file)?;
 
     // Build a mod project config from metadata/header layers (no content extraction).
-    let metadata = modpkg
-        .load_metadata()
-        .map_err(|e| AppError::Modpkg(e.to_string()))?;
+    let metadata = modpkg.load_metadata()?;
 
     // Use header layers as source of truth, preserving string overrides from metadata.
     let mut layers: Vec<ModProjectLayer> = modpkg
@@ -691,8 +692,7 @@ fn extract_modpkg_thumbnail(
     metadata_dir: &Path,
 ) -> AppResult<Option<PathBuf>> {
     let file = std::fs::File::open(archive_path)?;
-    let mut modpkg =
-        Modpkg::mount_from_reader(file).map_err(|e| AppError::Modpkg(e.to_string()))?;
+    let mut modpkg = Modpkg::mount_from_reader(file)?;
 
     match modpkg.load_thumbnail() {
         Ok(thumbnail_bytes) => {

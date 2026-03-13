@@ -1,4 +1,4 @@
-use crate::error::{AppError, AppResult};
+use crate::error::AppResult;
 use ltk_modpkg::Modpkg;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -33,12 +33,9 @@ pub struct LayerInfo {
 pub fn inspect_modpkg_file(file_path: &str) -> AppResult<ModpkgInfo> {
     let file_path = Path::new(file_path);
     let file = std::fs::File::open(file_path)?;
-    let mut modpkg =
-        Modpkg::mount_from_reader(file).map_err(|e| AppError::Modpkg(e.to_string()))?;
+    let mut modpkg = Modpkg::mount_from_reader(file)?;
 
-    let metadata = modpkg
-        .load_metadata()
-        .map_err(|e| AppError::Modpkg(e.to_string()))?;
+    let metadata = modpkg.load_metadata()?;
 
     let authors = metadata
         .authors
