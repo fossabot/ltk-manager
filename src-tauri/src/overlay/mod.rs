@@ -1,6 +1,3 @@
-pub mod fantome_content;
-pub mod modpkg_content;
-
 use crate::error::{AppError, AppResult};
 use crate::mods::ModLibrary;
 use crate::state::Settings;

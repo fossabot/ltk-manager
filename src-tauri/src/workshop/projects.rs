@@ -9,6 +9,7 @@ use crate::state::Settings;
 use ltk_mod_project::{
     default_layers, ModMap, ModProject, ModProjectAuthor, ModProjectLayer, ModTag,
 };
+use ltk_modpkg::{Modpkg, ModpkgExtractor};
 use std::collections::HashSet;
 use std::fs;
 use std::io::{Cursor, Read, Seek};
@@ -387,12 +388,9 @@ impl Workshop {
         let workshop_path = self.workshop_dir(settings)?;
 
         let file = fs::File::open(file_path)?;
-        let mut modpkg = ltk_modpkg::Modpkg::mount_from_reader(file)
-            .map_err(|e| AppError::Modpkg(e.to_string()))?;
+        let mut modpkg = Modpkg::mount_from_reader(file)?;
 
-        let metadata = modpkg
-            .load_metadata()
-            .map_err(|e| AppError::Modpkg(e.to_string()))?;
+        let metadata = modpkg.load_metadata()?;
 
         // Check if project already exists
         let project_dir = workshop_path.join(&metadata.name);
@@ -407,10 +405,8 @@ impl Workshop {
         let content_dir = project_dir.join("content");
         fs::create_dir_all(&content_dir)?;
 
-        let mut extractor = ltk_modpkg::ModpkgExtractor::new(&mut modpkg);
-        extractor
-            .extract_all(&content_dir)
-            .map_err(|e| AppError::Modpkg(e.to_string()))?;
+        let mut extractor = ModpkgExtractor::new(&mut modpkg);
+        extractor.extract_all(&content_dir)?;
 
         // Build layers from header, preserving string overrides from metadata
         let mut layers: Vec<ModProjectLayer> = modpkg

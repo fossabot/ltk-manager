@@ -155,7 +155,7 @@ pub enum AppError {
     Serialization(#[from] serde_json::Error),
 
     #[error("Modpkg error: {0}")]
-    Modpkg(String),
+    Modpkg(#[from] ltk_modpkg::error::ModpkgError),
 
     #[error("League installation not found")]
     LeagueNotFound,
@@ -215,7 +215,7 @@ impl From<AppError> for AppErrorResponse {
                 AppErrorResponse::new(ErrorCode::Serialization, e.to_string())
             }
 
-            AppError::Modpkg(msg) => AppErrorResponse::new(ErrorCode::Modpkg, msg),
+            AppError::Modpkg(e) => AppErrorResponse::new(ErrorCode::Modpkg, e.to_string()),
 
             AppError::LeagueNotFound => {
                 AppErrorResponse::new(ErrorCode::LeagueNotFound, "League installation not found")
