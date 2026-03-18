@@ -14,7 +14,7 @@ import { SortableModList } from "./SortableModList";
 
 function gridClass(viewMode: "grid" | "list", indent = false) {
   if (viewMode === "list") return indent ? "space-y-2 pl-7" : "space-y-2";
-  return "grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4";
+  return "grid grid-cols-[repeat(auto-fill,minmax(280px,380px))] gap-4";
 }
 
 interface LibraryContentProps {
