@@ -4,6 +4,7 @@ use crate::mods::{
 };
 use crate::patcher::PatcherState;
 use crate::state::SettingsState;
+use std::collections::HashMap;
 use tauri::State;
 
 /// Get all installed mods from the mod library.
@@ -96,6 +97,42 @@ pub fn reorder_mods(
         reject_if_patcher_running(&patcher)?;
         let settings = settings.0.lock().mutex_err()?.clone();
         library.0.reorder_mods(&settings, mod_ids)
+    })();
+    result.into()
+}
+
+/// Set the enabled/disabled state of individual layers for a mod.
+#[tauri::command]
+pub fn set_mod_layers(
+    mod_id: String,
+    layer_states: HashMap<String, bool>,
+    library: State<ModLibraryState>,
+    settings: State<SettingsState>,
+    patcher: State<PatcherState>,
+) -> IpcResult<()> {
+    let result: AppResult<()> = (|| {
+        reject_if_patcher_running(&patcher)?;
+        let settings = settings.0.lock().mutex_err()?.clone();
+        library.0.set_mod_layers(&settings, &mod_id, layer_states)
+    })();
+    result.into()
+}
+
+/// Enable a mod and set its initial layer configuration atomically.
+#[tauri::command]
+pub fn enable_mod_with_layers(
+    mod_id: String,
+    layer_states: HashMap<String, bool>,
+    library: State<ModLibraryState>,
+    settings: State<SettingsState>,
+    patcher: State<PatcherState>,
+) -> IpcResult<()> {
+    let result: AppResult<()> = (|| {
+        reject_if_patcher_running(&patcher)?;
+        let settings = settings.0.lock().mutex_err()?.clone();
+        library
+            .0
+            .enable_mod_with_layers(&settings, &mod_id, layer_states)
     })();
     result.into()
 }

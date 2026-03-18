@@ -89,13 +89,19 @@ export function ProjectCard({ project, viewMode, onEdit }: ProjectCardProps) {
           disabled={isPatcherActive}
         />
 
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-linear-to-br from-surface-700 to-surface-800">
+        <div className="relative h-12 w-[5.25rem] shrink-0 overflow-hidden rounded-lg bg-linear-to-br from-surface-700 to-surface-800">
           {thumbnailUrl ? (
-            <img src={thumbnailUrl} alt="" className="h-full w-full object-cover" />
+            <img
+              src={thumbnailUrl}
+              alt=""
+              className="absolute inset-0 h-full w-full object-cover"
+            />
           ) : (
-            <span className="text-lg font-bold text-surface-500">
-              {project.displayName.charAt(0).toUpperCase()}
-            </span>
+            <div className="flex h-full w-full items-center justify-center">
+              <span className="text-lg font-bold text-surface-500">
+                {project.displayName.charAt(0).toUpperCase()}
+              </span>
+            </div>
           )}
         </div>
 
@@ -229,13 +235,15 @@ export function ProjectCard({ project, viewMode, onEdit }: ProjectCardProps) {
         />
       </div>
 
-      <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded-t-xl bg-linear-to-br from-surface-700 to-surface-800">
+      <div className="relative aspect-video overflow-hidden rounded-t-xl bg-linear-to-br from-surface-700 to-surface-800">
         {thumbnailUrl ? (
-          <img src={thumbnailUrl} alt="" className="h-full w-full object-cover" />
+          <img src={thumbnailUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
         ) : (
-          <span className="text-4xl font-bold text-surface-400">
-            {project.displayName.charAt(0).toUpperCase()}
-          </span>
+          <div className="flex h-full w-full items-center justify-center">
+            <span className="text-4xl font-bold text-surface-400">
+              {project.displayName.charAt(0).toUpperCase()}
+            </span>
+          </div>
         )}
       </div>
 

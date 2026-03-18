@@ -12,6 +12,7 @@ use crate::error::{AppError, AppResult, MutexResultExt};
 use crate::state::{get_app_data_dir, Settings};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicI64, Ordering};
@@ -191,6 +192,10 @@ pub struct Profile {
     pub enabled_mods: Vec<String>,
     /// Display order of all mods (enabled and disabled) in the UI
     pub mod_order: Vec<String>,
+    /// Per-mod layer enabled/disabled states: mod_id → (layer_name → enabled).
+    /// Missing entries default to all layers enabled.
+    #[serde(default)]
+    pub layer_states: HashMap<String, HashMap<String, bool>>,
     /// Creation timestamp
     pub created_at: DateTime<Utc>,
     /// Last time this profile was used/switched to
@@ -292,6 +297,7 @@ impl Default for LibraryIndex {
             slug: ProfileSlug::from("default".to_string()),
             enabled_mods: Vec::new(),
             mod_order: Vec::new(),
+            layer_states: HashMap::new(),
             created_at: Utc::now(),
             last_used: Utc::now(),
         };
@@ -452,6 +458,9 @@ fn remove_orphaned_entries(storage_dir: &Path, index: &mut LibraryIndex) -> bool
         profile
             .enabled_mods
             .retain(|id| !orphaned_set.contains(id.as_str()));
+        profile
+            .layer_states
+            .retain(|id, _| !orphaned_set.contains(id.as_str()));
     }
 
     tracing::info!(
@@ -728,6 +737,7 @@ mod tests {
                 slug: ProfileSlug("default".to_string()),
                 enabled_mods: Vec::new(),
                 mod_order: Vec::new(),
+                layer_states: HashMap::new(),
                 created_at: Utc::now(),
                 last_used: Utc::now(),
             }],
@@ -747,6 +757,7 @@ mod tests {
                 slug: ProfileSlug("default".to_string()),
                 enabled_mods: Vec::new(),
                 mod_order: Vec::new(),
+                layer_states: HashMap::new(),
                 created_at: Utc::now(),
                 last_used: Utc::now(),
             }],
@@ -766,6 +777,7 @@ mod tests {
                 slug: ProfileSlug("default".to_string()),
                 enabled_mods: Vec::new(),
                 mod_order: Vec::new(),
+                layer_states: HashMap::new(),
                 created_at: Utc::now(),
                 last_used: Utc::now(),
             }],
@@ -852,6 +864,7 @@ mod tests {
             slug: ProfileSlug::from_name("My Profile").unwrap(),
             enabled_mods: Vec::new(),
             mod_order: Vec::new(),
+            layer_states: HashMap::new(),
             created_at: Utc::now(),
             last_used: Utc::now(),
         });
@@ -890,6 +903,7 @@ mod tests {
                 .unwrap_or_else(|| ProfileSlug("default".to_string())),
             mod_order: mod_order.into_iter().map(String::from).collect(),
             enabled_mods: enabled.into_iter().map(String::from).collect(),
+            layer_states: HashMap::new(),
             created_at: Utc::now(),
             last_used: Utc::now(),
         }

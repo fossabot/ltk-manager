@@ -1,10 +1,21 @@
 import { invoke } from "@tauri-apps/api/core";
-import { LuCopy, LuEllipsisVertical, LuFolderOpen, LuInfo, LuTrash2 } from "react-icons/lu";
+import { useState } from "react";
+import {
+  LuCopy,
+  LuEllipsisVertical,
+  LuFolderOpen,
+  LuInfo,
+  LuLayers,
+  LuTrash2,
+} from "react-icons/lu";
 
 import { IconButton, Menu, Switch, useToast } from "@/components";
-import type { InstalledMod } from "@/lib/tauri";
+import type { InstalledMod, ModLayer } from "@/lib/tauri";
+import { useEnableModWithLayers } from "@/modules/library/api";
 import { useModThumbnail } from "@/modules/library/api/useModThumbnail";
 import { getTagLabel } from "@/modules/library/utils/labels";
+
+import { LayerPickerPopover } from "./LayerPickerPopover";
 
 interface ModCardProps {
   mod: InstalledMod;
@@ -25,6 +36,29 @@ export function ModCard({
 }: ModCardProps) {
   const { data: thumbnailUrl } = useModThumbnail(mod.id);
   const toast = useToast();
+  const enableWithLayers = useEnableModWithLayers();
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  const isMultiLayer = mod.layers.length > 1;
+
+  function handleToggleOrPick(modId: string, enabled: boolean) {
+    if (enabled && !mod.enabled && isMultiLayer) {
+      setPickerOpen(true);
+      return;
+    }
+    onToggle(modId, enabled);
+  }
+
+  function handlePickerConfirm(layerStates: Record<string, boolean>) {
+    enableWithLayers.mutate(
+      { modId: mod.id, layerStates },
+      { onError: (error) => console.error("Failed to enable mod with layers:", error.message) },
+    );
+  }
+
+  function handlePickerCancel() {
+    setPickerOpen(false);
+  }
 
   async function handleCopyId() {
     await navigator.clipboard.writeText(mod.id);
@@ -41,11 +75,10 @@ export function ModCard({
 
   function handleCardClick(e: React.MouseEvent) {
     if (disabled) return;
-    // Don't toggle if clicking on menu button or toggle
     if ((e.target as HTMLElement).closest("[data-no-toggle]")) {
       return;
     }
-    onToggle(mod.id, !mod.enabled);
+    handleToggleOrPick(mod.id, !mod.enabled);
   }
 
   if (viewMode === "list") {
@@ -61,13 +94,19 @@ export function ModCard({
         }`}
       >
         {/* Thumbnail */}
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-linear-to-br from-surface-700 to-surface-800">
+        <div className="relative h-12 w-[5.25rem] shrink-0 overflow-hidden rounded-lg bg-linear-to-br from-surface-700 to-surface-800">
           {thumbnailUrl ? (
-            <img src={thumbnailUrl} alt="" className="h-full w-full object-cover" />
+            <img
+              src={thumbnailUrl}
+              alt=""
+              className="absolute inset-0 h-full w-full object-cover"
+            />
           ) : (
-            <span className="text-lg font-bold text-surface-500">
-              {mod.displayName.charAt(0).toUpperCase()}
-            </span>
+            <div className="flex h-full w-full items-center justify-center">
+              <span className="text-lg font-bold text-surface-500">
+                {mod.displayName.charAt(0).toUpperCase()}
+              </span>
+            </div>
           )}
         </div>
 
@@ -79,16 +118,30 @@ export function ModCard({
               v{mod.version} • {mod.authors.join(", ") || "Unknown author"}
             </p>
             <ModPills mod={mod} max={3} />
+            {isMultiLayer && <LayerBadge layers={mod.layers} />}
           </div>
         </div>
 
         {/* Toggle */}
         <div data-no-toggle onClick={(e) => e.stopPropagation()}>
-          <Switch
-            disabled={disabled}
-            checked={mod.enabled}
-            onCheckedChange={(checked) => onToggle(mod.id, checked)}
-          />
+          {isMultiLayer && !mod.enabled ? (
+            <LayerPickerPopover
+              open={pickerOpen}
+              onOpenChange={setPickerOpen}
+              modName={mod.displayName}
+              layers={mod.layers}
+              switchChecked={mod.enabled}
+              onConfirm={handlePickerConfirm}
+              onCancel={handlePickerCancel}
+              disabled={disabled}
+            />
+          ) : (
+            <Switch
+              disabled={disabled}
+              checked={mod.enabled}
+              onCheckedChange={(checked) => handleToggleOrPick(mod.id, checked)}
+            />
+          )}
         </div>
 
         {/* Menu */}
@@ -158,23 +211,40 @@ export function ModCard({
         data-no-toggle
         onClick={(e) => e.stopPropagation()}
       >
-        <Switch
-          size="sm"
-          disabled={disabled}
-          checked={mod.enabled}
-          onCheckedChange={(checked) => onToggle(mod.id, checked)}
-          className="shadow-lg data-[unchecked]:bg-surface-600/80 data-[unchecked]:backdrop-blur-sm"
-        />
+        {isMultiLayer && !mod.enabled ? (
+          <LayerPickerPopover
+            open={pickerOpen}
+            onOpenChange={setPickerOpen}
+            modName={mod.displayName}
+            layers={mod.layers}
+            switchSize="sm"
+            switchClassName="shadow-lg data-[unchecked]:bg-surface-600/80 data-[unchecked]:backdrop-blur-sm"
+            switchChecked={mod.enabled}
+            onConfirm={handlePickerConfirm}
+            onCancel={handlePickerCancel}
+            disabled={disabled}
+          />
+        ) : (
+          <Switch
+            size="sm"
+            disabled={disabled}
+            checked={mod.enabled}
+            onCheckedChange={(checked) => handleToggleOrPick(mod.id, checked)}
+            className="shadow-lg data-[unchecked]:bg-surface-600/80 data-[unchecked]:backdrop-blur-sm"
+          />
+        )}
       </div>
 
       {/* Thumbnail */}
-      <div className="flex aspect-video items-center justify-center overflow-hidden rounded-t-xl bg-linear-to-br from-surface-700 to-surface-800">
+      <div className="relative aspect-video overflow-hidden rounded-t-xl bg-linear-to-br from-surface-700 to-surface-800">
         {thumbnailUrl ? (
-          <img src={thumbnailUrl} alt="" className="h-full w-full object-cover" />
+          <img src={thumbnailUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
         ) : (
-          <span className="text-4xl font-bold text-surface-400">
-            {mod.displayName.charAt(0).toUpperCase()}
-          </span>
+          <div className="flex h-full w-full items-center justify-center">
+            <span className="text-4xl font-bold text-surface-400">
+              {mod.displayName.charAt(0).toUpperCase()}
+            </span>
+          </div>
         )}
       </div>
 
@@ -185,7 +255,10 @@ export function ModCard({
           {mod.displayName}
         </h3>
 
-        <ModPills mod={mod} max={3} className="mb-1" />
+        <div className="mb-1 flex items-center gap-1">
+          <ModPills mod={mod} max={3} />
+          {isMultiLayer && <LayerBadge layers={mod.layers} />}
+        </div>
 
         {/* Version, author, and menu on same row */}
         <div className="flex items-center text-xs text-surface-500">
@@ -272,5 +345,17 @@ function ModPills({ mod, max, className }: { mod: InstalledMod; max: number; cla
       ))}
       {overflow > 0 && <span className="text-[10px] text-surface-500">+{overflow}</span>}
     </div>
+  );
+}
+
+function LayerBadge({ layers }: { layers: ModLayer[] }) {
+  const enabledCount = layers.filter((l) => l.enabled).length;
+  const allEnabled = enabledCount === layers.length;
+
+  return (
+    <span className="inline-flex items-center gap-0.5 rounded bg-surface-700/60 px-1.5 py-0.5 text-[10px] leading-tight text-surface-400">
+      <LuLayers className="h-2.5 w-2.5" />
+      {allEnabled ? layers.length : `${enabledCount}/${layers.length}`}
+    </span>
   );
 }

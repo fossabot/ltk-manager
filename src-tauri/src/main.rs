@@ -194,6 +194,8 @@ fn main() {
             commands::install_mods,
             commands::uninstall_mod,
             commands::toggle_mod,
+            commands::set_mod_layers,
+            commands::enable_mod_with_layers,
             commands::inspect_modpkg,
             commands::get_mod_thumbnail,
             commands::get_storage_directory,

@@ -1,6 +1,7 @@
 use crate::error::{AppError, AppResult};
 use crate::state::Settings;
 use chrono::Utc;
+use std::collections::HashMap;
 use std::fs;
 use uuid::Uuid;
 
@@ -44,6 +45,7 @@ impl ModLibrary {
                 slug,
                 enabled_mods: Vec::new(),
                 mod_order,
+                layer_states: HashMap::new(),
                 created_at: Utc::now(),
                 last_used: Utc::now(),
             };

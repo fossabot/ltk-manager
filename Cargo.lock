@@ -2889,9 +2889,9 @@ dependencies = [
 
 [[package]]
 name = "ltk_modpkg"
-version = "0.3.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "19c4b72c1eea0840ed24c552e8297049d174705523d946be62208cb714dfe9ad"
+checksum = "f804a433654f8085261a0614cc7d83dbd36ceb3cbc117eff64ac06bf0182b788"
 dependencies = [
  "binrw",
  "byteorder",
@@ -2915,9 +2915,9 @@ dependencies = [
 
 [[package]]
 name = "ltk_overlay"
-version = "0.1.4"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cac14f7aa8dd1b7a017d95839c11a2b8732014f65ab1e67bb52df458e2149cf1"
+checksum = "c70004fb1c1342d174f503f4f98fa1a120108e57578db18021c7204bea42f08f"
 dependencies = [
  "byteorder",
  "camino",

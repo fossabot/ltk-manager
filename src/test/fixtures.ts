@@ -49,6 +49,7 @@ export function createMockProfile(overrides?: Partial<Profile>): Profile {
     slug: "test-profile",
     enabledMods: [],
     modOrder: [],
+    layerStates: {},
     createdAt: "2025-01-01T00:00:00.000Z",
     lastUsed: "2025-01-01T00:00:00.000Z",
     ...overrides,

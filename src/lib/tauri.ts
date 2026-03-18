@@ -90,6 +90,10 @@ export const api = {
   getModThumbnail: (modId: string) => invokeResult<string | null>("get_mod_thumbnail", { modId }),
   getStorageDirectory: () => invokeResult<string>("get_storage_directory"),
   reorderMods: (modIds: string[]) => invokeResult<void>("reorder_mods", { modIds }),
+  setModLayers: (modId: string, layerStates: Record<string, boolean>) =>
+    invokeResult<void>("set_mod_layers", { modId, layerStates }),
+  enableModWithLayers: (modId: string, layerStates: Record<string, boolean>) =>
+    invokeResult<void>("enable_mod_with_layers", { modId, layerStates }),
 
   // Migration
   scanCslolMods: (directory: string) =>

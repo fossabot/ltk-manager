@@ -5,6 +5,7 @@ use chrono::Utc;
 use ltk_mod_project::{ModMap, ModProject, ModProjectLayer, ModTag};
 use ltk_modpkg::Modpkg;
 use ltk_overlay::{FantomeContent, ModpkgContent};
+use std::collections::HashMap;
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
@@ -37,7 +38,8 @@ impl ModLibrary {
                     continue;
                 };
                 let enabled = enabled_set.contains(mod_id.as_str());
-                match read_installed_mod(entry, enabled, storage_dir) {
+                let mod_layer_states = active_profile.layer_states.get(mod_id.as_str());
+                match read_installed_mod(entry, enabled, storage_dir, mod_layer_states) {
                     Ok(m) => result.push(m),
                     Err(e) => {
                         tracing::warn!("Skipping broken mod entry {}: {}", entry.id, e);
@@ -210,6 +212,80 @@ impl ModLibrary {
         })
     }
 
+    /// Set the enabled/disabled state of individual layers for a mod in the active profile.
+    pub fn set_mod_layers(
+        &self,
+        settings: &Settings,
+        mod_id: &str,
+        layer_states: HashMap<String, bool>,
+    ) -> AppResult<()> {
+        self.mutate_index(settings, |_storage_dir, index| {
+            if !index.mods.iter().any(|m| m.id == mod_id) {
+                return Err(AppError::ModNotFound(mod_id.to_string()));
+            }
+
+            let active_profile_id = index.active_profile_id.clone();
+            let profile = index
+                .profiles
+                .iter_mut()
+                .find(|p| p.id == active_profile_id)
+                .ok_or_else(|| AppError::Other("Active profile not found".to_string()))?;
+
+            profile
+                .layer_states
+                .insert(mod_id.to_string(), layer_states);
+
+            Ok(())
+        })
+    }
+
+    /// Enable a mod and set its initial layer configuration in a single atomic operation.
+    pub fn enable_mod_with_layers(
+        &self,
+        settings: &Settings,
+        mod_id: &str,
+        layer_states: HashMap<String, bool>,
+    ) -> AppResult<()> {
+        self.mutate_index(settings, |_storage_dir, index| {
+            if !index.mods.iter().any(|m| m.id == mod_id) {
+                return Err(AppError::ModNotFound(mod_id.to_string()));
+            }
+
+            let active_profile_id = index.active_profile_id.clone();
+            let profile = index
+                .profiles
+                .iter_mut()
+                .find(|p| p.id == active_profile_id)
+                .ok_or_else(|| AppError::Other("Active profile not found".to_string()))?;
+
+            if !profile.enabled_mods.contains(&mod_id.to_string()) {
+                let insert_pos =
+                    if let Some(order_pos) = profile.mod_order.iter().position(|id| id == mod_id) {
+                        profile
+                            .enabled_mods
+                            .iter()
+                            .position(|id| {
+                                profile
+                                    .mod_order
+                                    .iter()
+                                    .position(|oid| oid == id)
+                                    .is_none_or(|p| p > order_pos)
+                            })
+                            .unwrap_or(profile.enabled_mods.len())
+                    } else {
+                        0
+                    };
+                profile.enabled_mods.insert(insert_pos, mod_id.to_string());
+            }
+
+            profile
+                .layer_states
+                .insert(mod_id.to_string(), layer_states);
+
+            Ok(())
+        })
+    }
+
     pub fn uninstall_mod_by_id(&self, settings: &Settings, mod_id: &str) -> AppResult<()> {
         self.mutate_index(settings, |storage_dir, index| {
             let Some(pos) = index.mods.iter().position(|m| m.id == mod_id) else {
@@ -222,6 +298,7 @@ impl ModLibrary {
             for profile in &mut index.profiles {
                 profile.mod_order.retain(|id| id != mod_id);
                 profile.enabled_mods.retain(|id| id != mod_id);
+                profile.layer_states.remove(mod_id);
             }
 
             // Delete metadata directory
@@ -339,9 +416,18 @@ impl ModLibrary {
                     ),
                 };
 
+                let enabled_layers = active_profile.layer_states.get(&entry.id).map(|states| {
+                    states
+                        .iter()
+                        .filter(|(_, &enabled)| enabled)
+                        .map(|(name, _)| name.clone())
+                        .collect::<std::collections::HashSet<String>>()
+                });
+
                 enabled_mods.push(ltk_overlay::EnabledMod {
                     id: entry.id.clone(),
                     content,
+                    enabled_layers,
                 });
             }
 
@@ -416,7 +502,19 @@ pub(super) fn install_single_mod_to_index(
         profile.mod_order.insert(0, id.clone());
     }
 
-    let installed_mod = read_installed_mod(&entry, true, storage_dir)?;
+    // Reconcile layer_states across all profiles for this mod ID.
+    // When a mod is re-installed with a different set of layers, remove stale entries.
+    if let Ok(project) = load_mod_project(&mod_metadata_dir) {
+        let new_layer_names: std::collections::HashSet<&str> =
+            project.layers.iter().map(|l| l.name.as_str()).collect();
+        for profile in &mut index.profiles {
+            if let Some(states) = profile.layer_states.get_mut(&id) {
+                states.retain(|name, _| new_layer_names.contains(name.as_str()));
+            }
+        }
+    }
+
+    let installed_mod = read_installed_mod(&entry, true, storage_dir, None)?;
     Ok((entry, installed_mod))
 }
 
@@ -424,6 +522,7 @@ fn read_installed_mod(
     entry: &LibraryModEntry,
     enabled: bool,
     storage_dir: &Path,
+    layer_states: Option<&HashMap<String, bool>>,
 ) -> AppResult<InstalledMod> {
     let mod_dir = entry.metadata_dir(storage_dir);
     let project = load_mod_project(&mod_dir)?;
@@ -442,7 +541,10 @@ fn read_installed_mod(
         .map(|l| ModLayer {
             name: l.name.clone(),
             priority: l.priority,
-            enabled: true,
+            enabled: layer_states
+                .and_then(|states| states.get(&l.name))
+                .copied()
+                .unwrap_or(true),
         })
         .collect::<Vec<_>>();
 
@@ -811,7 +913,7 @@ mod tests {
             format: ModArchiveFormat::Fantome,
         };
 
-        let result = read_installed_mod(&entry, true, storage.path()).unwrap();
+        let result = read_installed_mod(&entry, true, storage.path(), None).unwrap();
         assert_eq!(result.id, id);
         assert_eq!(result.name, "test-mod");
         assert_eq!(result.display_name, "Test Mod");
@@ -853,7 +955,7 @@ mod tests {
             format: ModArchiveFormat::Fantome,
         };
 
-        let result = read_installed_mod(&entry, false, storage.path()).unwrap();
+        let result = read_installed_mod(&entry, false, storage.path(), None).unwrap();
         assert!(result.description.is_none());
         assert!(!result.enabled);
     }
@@ -866,7 +968,7 @@ mod tests {
             installed_at: Utc::now(),
             format: ModArchiveFormat::Fantome,
         };
-        assert!(read_installed_mod(&entry, true, storage.path()).is_err());
+        assert!(read_installed_mod(&entry, true, storage.path(), None).is_err());
     }
 
     #[test]

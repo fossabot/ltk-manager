@@ -119,6 +119,7 @@ pub fn ensure_overlay(
         all_mods.push(ltk_overlay::EnabledMod {
             id,
             content: Box::new(ltk_overlay::FsModContent::new(utf8_path)),
+            enabled_layers: None,
         });
     }
     all_mods.extend(enabled_mods);

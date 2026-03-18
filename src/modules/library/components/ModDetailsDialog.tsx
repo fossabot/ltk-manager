@@ -3,8 +3,11 @@ import { LuCalendar, LuFolderOpen, LuLayers, LuMap, LuSword, LuTag, LuUser } fro
 
 import { Button, Dialog } from "@/components";
 import type { InstalledMod } from "@/lib/tauri";
+import { useSetModLayers } from "@/modules/library/api";
 import { useModThumbnail } from "@/modules/library/api/useModThumbnail";
 import { getMapLabel, getTagLabel } from "@/modules/library/utils/labels";
+
+import { LayerToggleList } from "./LayerToggleList";
 
 interface ModDetailsDialogProps {
   open: boolean;
@@ -66,13 +69,19 @@ function ModDetailsContent({ mod }: { mod: InstalledMod }) {
     <>
       {/* Thumbnail + basic info */}
       <div className="flex gap-4">
-        <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-linear-to-br from-surface-700 to-surface-800">
+        <div className="relative h-20 w-[8.75rem] shrink-0 overflow-hidden rounded-lg bg-linear-to-br from-surface-700 to-surface-800">
           {thumbnailUrl ? (
-            <img src={thumbnailUrl} alt="" className="h-full w-full object-cover" />
+            <img
+              src={thumbnailUrl}
+              alt=""
+              className="absolute inset-0 h-full w-full object-cover"
+            />
           ) : (
-            <span className="text-2xl font-bold text-surface-500">
-              {mod.displayName.charAt(0).toUpperCase()}
-            </span>
+            <div className="flex h-full w-full items-center justify-center">
+              <span className="text-2xl font-bold text-surface-500">
+                {mod.displayName.charAt(0).toUpperCase()}
+              </span>
+            </div>
           )}
         </div>
         <div className="min-w-0 flex-1 space-y-1">
@@ -159,30 +168,7 @@ function ModDetailsContent({ mod }: { mod: InstalledMod }) {
       )}
 
       {/* Layers */}
-      {mod.layers.length > 0 && (
-        <div>
-          <h4 className="mb-2 flex items-center gap-1.5 text-xs font-medium tracking-wide text-surface-500 uppercase">
-            <LuLayers className="h-3.5 w-3.5" />
-            Layers ({mod.layers.length})
-          </h4>
-          <div className="space-y-1.5">
-            {mod.layers.map((layer) => (
-              <div
-                key={layer.name}
-                className="flex items-center justify-between rounded-md border border-surface-700 bg-surface-800/50 px-3 py-2 text-sm"
-              >
-                <span className="text-surface-200">{layer.name}</span>
-                <div className="flex items-center gap-3 text-xs text-surface-500">
-                  <span>Priority {layer.priority}</span>
-                  <span className={layer.enabled ? "text-green-400" : "text-surface-500"}>
-                    {layer.enabled ? "Enabled" : "Disabled"}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {mod.layers.length > 1 && <ModDetailsLayers mod={mod} />}
 
       {/* File path */}
       <div>
@@ -192,5 +178,27 @@ function ModDetailsContent({ mod }: { mod: InstalledMod }) {
         <p className="text-xs break-all text-surface-400">{mod.modDir}</p>
       </div>
     </>
+  );
+}
+
+function ModDetailsLayers({ mod }: { mod: InstalledMod }) {
+  const setModLayers = useSetModLayers();
+
+  function handleToggle(layerName: string, enabled: boolean) {
+    const layerStates: Record<string, boolean> = {};
+    for (const layer of mod.layers) {
+      layerStates[layer.name] = layer.name === layerName ? enabled : layer.enabled;
+    }
+    setModLayers.mutate({ modId: mod.id, layerStates });
+  }
+
+  return (
+    <div>
+      <h4 className="mb-2 flex items-center gap-1.5 text-xs font-medium tracking-wide text-surface-500 uppercase">
+        <LuLayers className="h-3.5 w-3.5" />
+        Layers ({mod.layers.filter((l) => l.enabled).length}/{mod.layers.length})
+      </h4>
+      <LayerToggleList layers={mod.layers} onToggle={handleToggle} />
+    </div>
   );
 }

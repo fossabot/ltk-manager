@@ -49,11 +49,17 @@ export function ThumbnailSection({ project }: ThumbnailSectionProps) {
 
   return (
     <div className="shrink-0 space-y-3">
-      <div className="flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-lg border border-surface-600 bg-linear-to-br from-surface-700 to-surface-800 md:w-56">
+      <div className="relative aspect-video w-full overflow-hidden rounded-lg border border-surface-600 bg-linear-to-br from-surface-700 to-surface-800 md:w-56">
         {thumbnailUrl ? (
-          <img src={thumbnailUrl} alt="Project thumbnail" className="h-full w-full object-cover" />
+          <img
+            src={thumbnailUrl}
+            alt="Project thumbnail"
+            className="absolute inset-0 h-full w-full object-cover"
+          />
         ) : (
-          <LuImage className="h-10 w-10 text-surface-500" />
+          <div className="flex h-full w-full items-center justify-center">
+            <LuImage className="h-10 w-10 text-surface-500" />
+          </div>
         )}
       </div>
       {project.thumbnailPath ? (
