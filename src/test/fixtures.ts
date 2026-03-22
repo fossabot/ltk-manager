@@ -19,6 +19,8 @@ export function createMockSettings(overrides?: Partial<Settings>): Settings {
     killLeagueStopsPatcher: true,
     trustedDomains: ["runeforge.dev", "divineskins.gg"],
     watcherEnabled: false,
+    authorProfiles: [],
+    defaultAuthorProfileId: null,
     ...overrides,
   };
 }
