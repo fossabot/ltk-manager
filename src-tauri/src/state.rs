@@ -107,6 +107,16 @@ pub struct AccentColor {
     pub custom_hue: Option<f32>,
 }
 
+/// A saved author profile that can be reused across workshop projects.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthorProfile {
+    pub id: String,
+    pub name: String,
+    pub role: Option<String>,
+}
+
 fn default_true() -> bool {
     true
 }
@@ -162,6 +172,10 @@ pub struct Settings {
     /// Whether the library file watcher is enabled. Default: false.
     #[serde(default)]
     pub watcher_enabled: bool,
+    #[serde(default)]
+    pub author_profiles: Vec<AuthorProfile>,
+    #[serde(default)]
+    pub default_author_profile_id: Option<String>,
 }
 
 impl Default for Settings {
@@ -184,6 +198,8 @@ impl Default for Settings {
             kill_league_stops_patcher: true,
             trusted_domains: default_trusted_domains(),
             watcher_enabled: false,
+            author_profiles: vec![],
+            default_author_profile_id: None,
         }
     }
 }
@@ -231,11 +247,20 @@ mod tests {
             kill_league_stops_patcher: true,
             trusted_domains: vec!["runeforge.dev".to_string()],
             watcher_enabled: false,
+            author_profiles: vec![AuthorProfile {
+                id: "test-id".to_string(),
+                name: "Test Author".to_string(),
+                role: Some("3D Artist".to_string()),
+            }],
+            default_author_profile_id: Some("test-id".to_string()),
         };
         let json = serde_json::to_string(&settings).unwrap();
         let deserialized: Settings = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.league_path.unwrap(), PathBuf::from("/game"));
         assert!(deserialized.first_run_complete);
+        assert_eq!(deserialized.author_profiles.len(), 1);
+        assert_eq!(deserialized.author_profiles[0].name, "Test Author");
+        assert_eq!(deserialized.default_author_profile_id.unwrap(), "test-id");
         assert_eq!(deserialized.theme, Theme::Dark);
         assert!(deserialized.patch_tft);
     }

@@ -39,8 +39,11 @@ export function removeAuthorAt(authors: WorkshopAuthor[], index: number): Worksh
 }
 
 /**
- * Append a blank author entry.
+ * Append an author entry, optionally pre-filled with initial values.
  */
-export function appendAuthor(authors: WorkshopAuthor[]): WorkshopAuthor[] {
-  return [...authors, { name: "", role: "" }];
+export function appendAuthor(
+  authors: WorkshopAuthor[],
+  initial?: Partial<WorkshopAuthor>,
+): WorkshopAuthor[] {
+  return [...authors, { name: initial?.name ?? "", role: initial?.role ?? "" }];
 }

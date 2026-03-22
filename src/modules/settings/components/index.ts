@@ -1,5 +1,6 @@
 export { AboutSection } from "./AboutSection";
 export { AppearanceSection } from "./AppearanceSection";
+export { AuthorProfilesSection } from "./AuthorProfilesSection";
 export { GeneralSection } from "./GeneralSection";
 export { HotkeySection } from "./HotkeySection";
 export { LeaguePathSection } from "./LeaguePathSection";

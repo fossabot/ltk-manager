@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Button, SectionCard, useToast } from "@/components";
 import { useAppForm } from "@/lib/form";
 import type { WorkshopAuthor } from "@/lib/tauri";
+import { useSettings } from "@/modules/settings";
 import {
   appendAuthor,
   AuthorsSection,
@@ -27,6 +28,7 @@ function ProjectOverview() {
   const project = useProjectContext();
   const navigate = useNavigate();
   const saveConfig = useSaveProjectConfig();
+  const { data: settings } = useSettings();
   const toast = useToast();
 
   const [authors, setAuthors] = useState<WorkshopAuthor[]>(
@@ -104,7 +106,8 @@ function ProjectOverview() {
 
       <AuthorsSection
         authors={authors}
-        onAdd={() => setAuthors(appendAuthor)}
+        authorProfiles={settings?.authorProfiles}
+        onAdd={(initial) => setAuthors((prev) => appendAuthor(prev, initial))}
         onRemove={(i) => setAuthors((prev) => removeAuthorAt(prev, i))}
         onUpdate={(i, field, value) => setAuthors((prev) => updateAuthorAt(prev, i, field, value))}
       />

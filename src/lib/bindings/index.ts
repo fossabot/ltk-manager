@@ -1,6 +1,7 @@
 export type { AccentColor } from "./AccentColor";
 export type { AppError } from "./AppError";
 export type { AppInfo } from "./AppInfo";
+export type { AuthorProfile } from "./AuthorProfile";
 export type { BulkInstallError } from "./BulkInstallError";
 export type { BulkInstallResult } from "./BulkInstallResult";
 export type { CreateProjectArgs } from "./CreateProjectArgs";

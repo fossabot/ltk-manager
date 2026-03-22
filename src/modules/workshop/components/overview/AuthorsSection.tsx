@@ -1,23 +1,35 @@
 import { Plus, Trash2, Users } from "lucide-react";
 
 import { Button, FormField, IconButton, SectionCard } from "@/components";
-import type { WorkshopAuthor } from "@/lib/tauri";
+import type { AuthorProfile, WorkshopAuthor } from "@/lib/tauri";
 
 interface AuthorsSectionProps {
   authors: WorkshopAuthor[];
-  onAdd: () => void;
+  authorProfiles?: AuthorProfile[];
+  onAdd: (initial?: Partial<WorkshopAuthor>) => void;
   onRemove: (index: number) => void;
   onUpdate: (index: number, field: "name" | "role", value: string) => void;
 }
 
-export function AuthorsSection({ authors, onAdd, onRemove, onUpdate }: AuthorsSectionProps) {
+export function AuthorsSection({
+  authors,
+  authorProfiles: _authorProfiles,
+  onAdd,
+  onRemove,
+  onUpdate,
+}: AuthorsSectionProps) {
   return (
     <SectionCard
       title="Authors"
       icon={<Users className="h-4 w-4" />}
       description="People who contributed to this mod."
       action={
-        <Button variant="outline" size="sm" left={<Plus className="h-4 w-4" />} onClick={onAdd}>
+        <Button
+          variant="outline"
+          size="sm"
+          left={<Plus className="h-4 w-4" />}
+          onClick={() => onAdd()}
+        >
           Add Author
         </Button>
       }
