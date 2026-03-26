@@ -1,6 +1,12 @@
 import { queryOptions, useQuery } from "@tanstack/react-query";
 
-import { api, type AppError, type InstalledMod, type Profile } from "@/lib/tauri";
+import {
+  api,
+  type AppError,
+  type InstalledMod,
+  type LibraryFolder,
+  type Profile,
+} from "@/lib/tauri";
 import { queryFn } from "@/utils/query";
 
 import { libraryKeys } from "./keys";
@@ -62,4 +68,30 @@ export function installedModsQueryOptions() {
  */
 export function useInstalledMods() {
   return useQuery(installedModsQueryOptions());
+}
+
+// ============================================================================
+// Folders
+// ============================================================================
+
+export function foldersQueryOptions() {
+  return queryOptions<LibraryFolder[], AppError>({
+    queryKey: libraryKeys.folders(),
+    queryFn: queryFn(api.getFolders),
+  });
+}
+
+export function useFolders() {
+  return useQuery(foldersQueryOptions());
+}
+
+export function folderOrderQueryOptions() {
+  return queryOptions<string[], AppError>({
+    queryKey: libraryKeys.folderOrder(),
+    queryFn: queryFn(api.getFolderOrder),
+  });
+}
+
+export function useFolderOrder() {
+  return useQuery(folderOrderQueryOptions());
 }

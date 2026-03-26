@@ -14,6 +14,7 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as WorkshopIndexRouteImport } from './routes/workshop/index'
 import { Route as WorkshopProjectNameRouteImport } from './routes/workshop/$projectName'
+import { Route as FolderFolderIdRouteImport } from './routes/folder.$folderId'
 import { Route as WorkshopProjectNameIndexRouteImport } from './routes/workshop/$projectName/index'
 import { Route as WorkshopProjectNameStringsRouteImport } from './routes/workshop/$projectName/strings'
 import { Route as WorkshopProjectNameLayersRouteImport } from './routes/workshop/$projectName/layers'
@@ -43,6 +44,11 @@ const WorkshopProjectNameRoute = WorkshopProjectNameRouteImport.update({
   path: '/$projectName',
   getParentRoute: () => WorkshopRoute,
 } as any)
+const FolderFolderIdRoute = FolderFolderIdRouteImport.update({
+  id: '/folder/$folderId',
+  path: '/folder/$folderId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const WorkshopProjectNameIndexRoute =
   WorkshopProjectNameIndexRouteImport.update({
     id: '/',
@@ -66,6 +72,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/settings': typeof SettingsRoute
   '/workshop': typeof WorkshopRouteWithChildren
+  '/folder/$folderId': typeof FolderFolderIdRoute
   '/workshop/$projectName': typeof WorkshopProjectNameRouteWithChildren
   '/workshop/': typeof WorkshopIndexRoute
   '/workshop/$projectName/layers': typeof WorkshopProjectNameLayersRoute
@@ -75,6 +82,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/settings': typeof SettingsRoute
+  '/folder/$folderId': typeof FolderFolderIdRoute
   '/workshop': typeof WorkshopIndexRoute
   '/workshop/$projectName/layers': typeof WorkshopProjectNameLayersRoute
   '/workshop/$projectName/strings': typeof WorkshopProjectNameStringsRoute
@@ -85,6 +93,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/settings': typeof SettingsRoute
   '/workshop': typeof WorkshopRouteWithChildren
+  '/folder/$folderId': typeof FolderFolderIdRoute
   '/workshop/$projectName': typeof WorkshopProjectNameRouteWithChildren
   '/workshop/': typeof WorkshopIndexRoute
   '/workshop/$projectName/layers': typeof WorkshopProjectNameLayersRoute
@@ -97,6 +106,7 @@ export interface FileRouteTypes {
     | '/'
     | '/settings'
     | '/workshop'
+    | '/folder/$folderId'
     | '/workshop/$projectName'
     | '/workshop/'
     | '/workshop/$projectName/layers'
@@ -106,6 +116,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/settings'
+    | '/folder/$folderId'
     | '/workshop'
     | '/workshop/$projectName/layers'
     | '/workshop/$projectName/strings'
@@ -115,6 +126,7 @@ export interface FileRouteTypes {
     | '/'
     | '/settings'
     | '/workshop'
+    | '/folder/$folderId'
     | '/workshop/$projectName'
     | '/workshop/'
     | '/workshop/$projectName/layers'
@@ -126,6 +138,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   SettingsRoute: typeof SettingsRoute
   WorkshopRoute: typeof WorkshopRouteWithChildren
+  FolderFolderIdRoute: typeof FolderFolderIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -164,6 +177,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/workshop/$projectName'
       preLoaderRoute: typeof WorkshopProjectNameRouteImport
       parentRoute: typeof WorkshopRoute
+    }
+    '/folder/$folderId': {
+      id: '/folder/$folderId'
+      path: '/folder/$folderId'
+      fullPath: '/folder/$folderId'
+      preLoaderRoute: typeof FolderFolderIdRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/workshop/$projectName/': {
       id: '/workshop/$projectName/'
@@ -222,6 +242,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   SettingsRoute: SettingsRoute,
   WorkshopRoute: WorkshopRouteWithChildren,
+  FolderFolderIdRoute: FolderFolderIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

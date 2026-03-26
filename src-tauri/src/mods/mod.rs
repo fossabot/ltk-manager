@@ -1,3 +1,4 @@
+mod folders;
 mod inspect;
 mod library;
 mod migration;
@@ -231,7 +232,22 @@ pub struct InstalledMod {
     pub maps: Vec<String>,
     /// Directory where the mod is installed
     pub mod_dir: String,
+    /// ID of the containing folder, or None if ungrouped.
+    pub folder_id: Option<String>,
 }
+
+/// A named folder for grouping mods in the library.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryFolder {
+    pub id: String,
+    pub name: String,
+    pub mod_ids: Vec<String>,
+}
+
+/// Sentinel ID for the implicit root folder that holds ungrouped mods.
+pub const ROOT_FOLDER_ID: &str = "root";
 
 /// Result of a bulk mod install operation.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -287,6 +303,12 @@ pub(crate) struct LibraryIndex {
     pub(super) mods: Vec<LibraryModEntry>,
     pub(super) profiles: Vec<Profile>,
     pub(crate) active_profile_id: String,
+    #[serde(default)]
+    pub(super) folders: Vec<LibraryFolder>,
+    /// Top-level display order — a list of folder IDs.
+    /// All mods belong to a folder; the root folder (ID "root") holds ungrouped mods.
+    #[serde(default)]
+    pub(super) folder_order: Vec<String>,
 }
 
 impl Default for LibraryIndex {
@@ -307,6 +329,12 @@ impl Default for LibraryIndex {
             mods: Vec::new(),
             profiles: vec![default_profile],
             active_profile_id,
+            folders: vec![LibraryFolder {
+                id: ROOT_FOLDER_ID.to_string(),
+                name: String::new(),
+                mod_ids: Vec::new(),
+            }],
+            folder_order: vec![ROOT_FOLDER_ID.to_string()],
         }
     }
 }
@@ -373,8 +401,40 @@ pub(super) fn load_library_index(storage_dir: &Path) -> AppResult<LibraryIndex> 
         return Ok(LibraryIndex::default());
     }
 
-    let index: LibraryIndex =
+    let mut index: LibraryIndex =
         serde_json::from_str(&fs::read_to_string(&path)?).map_err(AppError::from)?;
+
+    // Migration: ensure root folder exists and all mods belong to a folder
+    if !index.folders.iter().any(|f| f.id == ROOT_FOLDER_ID) {
+        // Create root folder with all existing mods (from active profile's mod_order for ordering)
+        let mod_ids = if let Some(profile) = index
+            .profiles
+            .iter()
+            .find(|p| p.id == index.active_profile_id)
+        {
+            profile.mod_order.clone()
+        } else {
+            index.mods.iter().map(|m| m.id.clone()).collect()
+        };
+        index.folders.insert(
+            0,
+            LibraryFolder {
+                id: ROOT_FOLDER_ID.to_string(),
+                name: String::new(),
+                mod_ids,
+            },
+        );
+        if !index.folder_order.contains(&ROOT_FOLDER_ID.to_string()) {
+            index.folder_order.insert(0, ROOT_FOLDER_ID.to_string());
+        }
+        tracing::info!("Migrated library to root folder model");
+    }
+
+    // Ensure folder_order is populated
+    if index.folder_order.is_empty() && !index.folders.is_empty() {
+        index.folder_order = index.folders.iter().map(|f| f.id.clone()).collect();
+        tracing::info!("Populated folder_order from folders list");
+    }
 
     Ok(index)
 }
@@ -470,42 +530,44 @@ fn remove_orphaned_entries(storage_dir: &Path, index: &mut LibraryIndex) -> bool
     true
 }
 
-/// Ensure all profiles contain all valid mods in their `mod_order`.
-///
-/// Mods installed while a different profile was active won't appear in
-/// that profile's `mod_order`, causing reorder validation mismatches.
+/// Ensure all profiles contain all valid mods in their `mod_order` and
+/// that `item_order` + folders are consistent with the mod set.
 fn sync_profile_mod_orders(index: &mut LibraryIndex) -> bool {
     let mut changed = false;
+
+    // Sync folders and folder_order with valid mods
+    changed |= folders::sync_folders(index);
+
+    // Derive flat mod order from folder_order + folder contents
+    let flat = folders::flatten_folder_order(index);
     let valid_ids: std::collections::HashSet<&str> =
         index.mods.iter().map(|m| m.id.as_str()).collect();
 
     for profile in &mut index.profiles {
         let before = profile.mod_order.len() + profile.enabled_mods.len();
         profile
-            .mod_order
-            .retain(|id| valid_ids.contains(id.as_str()));
-        profile
             .enabled_mods
             .retain(|id| valid_ids.contains(id.as_str()));
-        if profile.mod_order.len() + profile.enabled_mods.len() != before {
+
+        // Replace mod_order with the flattened item_order
+        if profile.mod_order != flat {
+            profile.mod_order = flat.clone();
             changed = true;
         }
 
-        let order_set: std::collections::HashSet<&str> =
-            profile.mod_order.iter().map(|s| s.as_str()).collect();
-        let missing: Vec<String> = index
-            .mods
+        // Re-derive enabled_mods order from the new flat order
+        let enabled_set: std::collections::HashSet<&str> =
+            profile.enabled_mods.iter().map(|s| s.as_str()).collect();
+        let new_enabled: Vec<String> = flat
             .iter()
-            .filter(|m| !order_set.contains(m.id.as_str()))
-            .map(|m| m.id.clone())
+            .filter(|id| enabled_set.contains(id.as_str()))
+            .cloned()
             .collect();
-        for id in missing {
-            tracing::info!(
-                "Adding missing mod {} to profile '{}' mod_order",
-                id,
-                profile.name
-            );
-            profile.mod_order.push(id);
+        if profile.enabled_mods != new_enabled {
+            profile.enabled_mods = new_enabled;
+        }
+
+        if profile.mod_order.len() + profile.enabled_mods.len() != before {
             changed = true;
         }
     }
@@ -722,6 +784,12 @@ mod tests {
             mods: Vec::new(),
             profiles: Vec::new(),
             active_profile_id: String::new(),
+            folders: vec![LibraryFolder {
+                id: ROOT_FOLDER_ID.to_string(),
+                name: String::new(),
+                mod_ids: Vec::new(),
+            }],
+            folder_order: vec![ROOT_FOLDER_ID.to_string()],
         };
         let slug = ProfileSlug("test".to_string());
         assert!(slug.is_unique_in(&index, None));
@@ -742,6 +810,12 @@ mod tests {
                 last_used: Utc::now(),
             }],
             active_profile_id: "p1".to_string(),
+            folders: vec![LibraryFolder {
+                id: ROOT_FOLDER_ID.to_string(),
+                name: String::new(),
+                mod_ids: Vec::new(),
+            }],
+            folder_order: vec![ROOT_FOLDER_ID.to_string()],
         };
         let slug = ProfileSlug("my-profile".to_string());
         assert!(slug.is_unique_in(&index, None));
@@ -762,6 +836,12 @@ mod tests {
                 last_used: Utc::now(),
             }],
             active_profile_id: "p1".to_string(),
+            folders: vec![LibraryFolder {
+                id: ROOT_FOLDER_ID.to_string(),
+                name: String::new(),
+                mod_ids: Vec::new(),
+            }],
+            folder_order: vec![ROOT_FOLDER_ID.to_string()],
         };
         let slug = ProfileSlug("default".to_string());
         assert!(!slug.is_unique_in(&index, None));
@@ -782,6 +862,12 @@ mod tests {
                 last_used: Utc::now(),
             }],
             active_profile_id: "p1".to_string(),
+            folders: vec![LibraryFolder {
+                id: ROOT_FOLDER_ID.to_string(),
+                name: String::new(),
+                mod_ids: Vec::new(),
+            }],
+            folder_order: vec![ROOT_FOLDER_ID.to_string()],
         };
         let slug = ProfileSlug("default".to_string());
         assert!(slug.is_unique_in(&index, Some("p1")));
@@ -829,6 +915,12 @@ mod tests {
             mods: Vec::new(),
             profiles: Vec::new(),
             active_profile_id: "nonexistent".to_string(),
+            folders: vec![LibraryFolder {
+                id: ROOT_FOLDER_ID.to_string(),
+                name: String::new(),
+                mod_ids: Vec::new(),
+            }],
+            folder_order: vec![ROOT_FOLDER_ID.to_string()],
         };
         assert!(get_active_profile(&index).is_err());
     }
@@ -939,6 +1031,12 @@ mod tests {
                 vec!["mod-a"],
             )],
             active_profile_id: "p1".to_string(),
+            folders: vec![LibraryFolder {
+                id: ROOT_FOLDER_ID.to_string(),
+                name: String::new(),
+                mod_ids: vec!["mod-a".to_string()],
+            }],
+            folder_order: vec![ROOT_FOLDER_ID.to_string()],
         };
 
         assert!(!reconcile_library_index(dir.path(), &mut index));
@@ -966,6 +1064,12 @@ mod tests {
                 vec!["mod-a"],
             )],
             active_profile_id: "p1".to_string(),
+            folders: vec![LibraryFolder {
+                id: ROOT_FOLDER_ID.to_string(),
+                name: String::new(),
+                mod_ids: vec!["mod-a".to_string()],
+            }],
+            folder_order: vec![ROOT_FOLDER_ID.to_string()],
         };
 
         assert!(reconcile_library_index(dir.path(), &mut index));
@@ -993,6 +1097,12 @@ mod tests {
                 vec!["mod-a"],
             )],
             active_profile_id: "p1".to_string(),
+            folders: vec![LibraryFolder {
+                id: ROOT_FOLDER_ID.to_string(),
+                name: String::new(),
+                mod_ids: vec!["mod-a".to_string()],
+            }],
+            folder_order: vec![ROOT_FOLDER_ID.to_string()],
         };
 
         assert!(reconcile_library_index(dir.path(), &mut index));
@@ -1012,6 +1122,12 @@ mod tests {
                 vec!["ghost"],
             )],
             active_profile_id: "p1".to_string(),
+            folders: vec![LibraryFolder {
+                id: ROOT_FOLDER_ID.to_string(),
+                name: String::new(),
+                mod_ids: vec!["ghost".to_string()],
+            }],
+            folder_order: vec![ROOT_FOLDER_ID.to_string()],
         };
 
         assert!(reconcile_library_index(dir.path(), &mut index));
@@ -1038,6 +1154,12 @@ mod tests {
                 vec!["valid", "orphan"],
             )],
             active_profile_id: "p1".to_string(),
+            folders: vec![LibraryFolder {
+                id: ROOT_FOLDER_ID.to_string(),
+                name: String::new(),
+                mod_ids: vec!["valid".to_string(), "orphan".to_string()],
+            }],
+            folder_order: vec![ROOT_FOLDER_ID.to_string()],
         };
 
         assert!(reconcile_library_index(dir.path(), &mut index));
@@ -1064,6 +1186,16 @@ mod tests {
                 vec!["ghost-1"],
             )],
             active_profile_id: "p1".to_string(),
+            folders: vec![LibraryFolder {
+                id: ROOT_FOLDER_ID.to_string(),
+                name: String::new(),
+                mod_ids: vec![
+                    "ghost-1".to_string(),
+                    "ghost-2".to_string(),
+                    "ghost-3".to_string(),
+                ],
+            }],
+            folder_order: vec![ROOT_FOLDER_ID.to_string()],
         };
 
         assert!(reconcile_library_index(dir.path(), &mut index));
@@ -1091,6 +1223,12 @@ mod tests {
                 vec!["mod-a"],
             )],
             active_profile_id: "p1".to_string(),
+            folders: vec![LibraryFolder {
+                id: ROOT_FOLDER_ID.to_string(),
+                name: String::new(),
+                mod_ids: vec!["mod-a".to_string(), "mod-b".to_string()],
+            }],
+            folder_order: vec![ROOT_FOLDER_ID.to_string()],
         };
 
         assert!(reconcile_library_index(dir.path(), &mut index));
@@ -1115,11 +1253,17 @@ mod tests {
                 make_test_profile("p2", "Ranked", vec!["mod-b"], vec!["mod-b"]),
             ],
             active_profile_id: "p1".to_string(),
+            folders: vec![LibraryFolder {
+                id: ROOT_FOLDER_ID.to_string(),
+                name: String::new(),
+                mod_ids: vec!["mod-a".to_string(), "mod-b".to_string()],
+            }],
+            folder_order: vec![ROOT_FOLDER_ID.to_string()],
         };
 
         assert!(reconcile_library_index(dir.path(), &mut index));
         assert_eq!(index.profiles[0].mod_order, vec!["mod-a", "mod-b"]);
-        assert_eq!(index.profiles[1].mod_order, vec!["mod-b", "mod-a"]);
+        assert_eq!(index.profiles[1].mod_order, vec!["mod-a", "mod-b"]);
     }
 
     #[test]
@@ -1137,6 +1281,12 @@ mod tests {
                 vec!["mod-a", "deleted-mod"],
             )],
             active_profile_id: "p1".to_string(),
+            folders: vec![LibraryFolder {
+                id: ROOT_FOLDER_ID.to_string(),
+                name: String::new(),
+                mod_ids: vec!["mod-a".to_string()],
+            }],
+            folder_order: vec![ROOT_FOLDER_ID.to_string()],
         };
 
         assert!(reconcile_library_index(dir.path(), &mut index));
@@ -1164,6 +1314,16 @@ mod tests {
                 make_test_profile("p2", "Ranked", vec!["orphan"], vec!["orphan"]),
             ],
             active_profile_id: "p1".to_string(),
+            folders: vec![LibraryFolder {
+                id: ROOT_FOLDER_ID.to_string(),
+                name: String::new(),
+                mod_ids: vec![
+                    "mod-a".to_string(),
+                    "mod-b".to_string(),
+                    "orphan".to_string(),
+                ],
+            }],
+            folder_order: vec![ROOT_FOLDER_ID.to_string()],
         };
 
         assert!(reconcile_library_index(dir.path(), &mut index));
@@ -1185,6 +1345,12 @@ mod tests {
             mods: Vec::new(),
             profiles: vec![make_test_profile("p1", "Default", vec![], vec![])],
             active_profile_id: "p1".to_string(),
+            folders: vec![LibraryFolder {
+                id: ROOT_FOLDER_ID.to_string(),
+                name: String::new(),
+                mod_ids: Vec::new(),
+            }],
+            folder_order: vec![ROOT_FOLDER_ID.to_string()],
         };
 
         assert!(!reconcile_library_index(dir.path(), &mut index));
@@ -1204,6 +1370,12 @@ mod tests {
                 vec!["ghost"],
             )],
             active_profile_id: "p1".to_string(),
+            folders: vec![LibraryFolder {
+                id: ROOT_FOLDER_ID.to_string(),
+                name: String::new(),
+                mod_ids: vec!["ghost".to_string()],
+            }],
+            folder_order: vec![ROOT_FOLDER_ID.to_string()],
         };
         save_library_index(dir.path(), &index).unwrap();
 
@@ -1250,6 +1422,12 @@ mod tests {
             mods: Vec::new(),
             profiles: vec![make_test_profile("p1", "Default", vec![], vec![])],
             active_profile_id: "p1".to_string(),
+            folders: vec![LibraryFolder {
+                id: ROOT_FOLDER_ID.to_string(),
+                name: String::new(),
+                mod_ids: Vec::new(),
+            }],
+            folder_order: vec![ROOT_FOLDER_ID.to_string()],
         };
 
         assert!(reconcile_library_index(dir.path(), &mut index));
@@ -1278,6 +1456,12 @@ mod tests {
                 vec!["mod-a"],
             )],
             active_profile_id: "p1".to_string(),
+            folders: vec![LibraryFolder {
+                id: ROOT_FOLDER_ID.to_string(),
+                name: String::new(),
+                mod_ids: vec!["mod-a".to_string()],
+            }],
+            folder_order: vec![ROOT_FOLDER_ID.to_string()],
         };
 
         assert!(!reconcile_library_index(dir.path(), &mut index));
@@ -1297,6 +1481,12 @@ mod tests {
             mods: Vec::new(),
             profiles: vec![make_test_profile("p1", "Default", vec![], vec![])],
             active_profile_id: "p1".to_string(),
+            folders: vec![LibraryFolder {
+                id: ROOT_FOLDER_ID.to_string(),
+                name: String::new(),
+                mod_ids: Vec::new(),
+            }],
+            folder_order: vec![ROOT_FOLDER_ID.to_string()],
         };
 
         // Should not crash, the corrupt file is cleaned up to prevent retry loops
@@ -1332,6 +1522,12 @@ mod tests {
                 vec!["mod-a"],
             )],
             active_profile_id: "p1".to_string(),
+            folders: vec![LibraryFolder {
+                id: ROOT_FOLDER_ID.to_string(),
+                name: String::new(),
+                mod_ids: vec!["mod-a".to_string()],
+            }],
+            folder_order: vec![ROOT_FOLDER_ID.to_string()],
         };
 
         assert!(reconcile_library_index(dir.path(), &mut index));
@@ -1362,9 +1558,63 @@ mod tests {
                 vec!["mod-a"],
             )],
             active_profile_id: "p1".to_string(),
+            folders: vec![LibraryFolder {
+                id: ROOT_FOLDER_ID.to_string(),
+                name: String::new(),
+                mod_ids: vec!["mod-a".to_string()],
+            }],
+            folder_order: vec![ROOT_FOLDER_ID.to_string()],
         };
 
         assert!(!reconcile_library_index(dir.path(), &mut index));
+    }
+
+    #[test]
+    fn load_library_index_migrates_legacy_without_folders() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("library.json");
+
+        // Write a legacy JSON without folders or folder_order fields
+        let legacy_json = serde_json::json!({
+            "mods": [
+                {
+                    "id": "mod-a",
+                    "installedAt": "2026-01-01T00:00:00Z",
+                    "format": "modpkg"
+                },
+                {
+                    "id": "mod-b",
+                    "installedAt": "2026-01-01T00:00:00Z",
+                    "format": "modpkg"
+                }
+            ],
+            "profiles": [{
+                "id": "p1",
+                "name": "Default",
+                "slug": "default",
+                "modOrder": ["mod-a", "mod-b"],
+                "enabledMods": ["mod-a"],
+                "layerStates": {},
+                "createdAt": "2026-01-01T00:00:00Z",
+                "lastUsed": "2026-01-01T00:00:00Z"
+            }],
+            "activeProfileId": "p1"
+        });
+        fs::write(&path, serde_json::to_string_pretty(&legacy_json).unwrap()).unwrap();
+
+        let index = load_library_index(dir.path()).unwrap();
+
+        // Root folder should exist with all mods
+        let root = index.folders.iter().find(|f| f.id == ROOT_FOLDER_ID);
+        assert!(
+            root.is_some(),
+            "Root folder should be created during migration"
+        );
+        let root = root.unwrap();
+        assert_eq!(root.mod_ids, vec!["mod-a", "mod-b"]);
+
+        // folder_order should contain root
+        assert_eq!(index.folder_order, vec![ROOT_FOLDER_ID]);
     }
 
     #[test]
@@ -1381,6 +1631,12 @@ mod tests {
                 vec!["mod-a"],
             )],
             active_profile_id: "p1".to_string(),
+            folders: vec![LibraryFolder {
+                id: ROOT_FOLDER_ID.to_string(),
+                name: String::new(),
+                mod_ids: vec!["mod-a".to_string()],
+            }],
+            folder_order: vec![ROOT_FOLDER_ID.to_string()],
         };
         save_library_index(dir.path(), &index).unwrap();
 

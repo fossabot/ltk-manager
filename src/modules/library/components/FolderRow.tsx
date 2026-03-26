@@ -1,0 +1,64 @@
+import { ChevronDown, ChevronRight, FolderOpen } from "lucide-react";
+
+import { Button, Checkbox } from "@/components";
+import type { InstalledMod, LibraryFolder } from "@/lib/tauri";
+import { useFolderToggle } from "@/modules/library/api";
+import { useLibraryViewStore } from "@/stores/libraryView";
+
+import { FolderContextMenu } from "./FolderContextMenu";
+import { ModCard } from "./ModCard";
+
+interface FolderRowProps {
+  folder: LibraryFolder;
+  mods: InstalledMod[];
+  onViewDetails?: (mod: InstalledMod) => void;
+}
+
+export function FolderRow({ folder, mods, onViewDetails }: FolderRowProps) {
+  const expandedFolders = useLibraryViewStore((s) => s.expandedFolders);
+  const toggleFolderExpanded = useLibraryViewStore((s) => s.toggleFolderExpanded);
+  const isExpanded = expandedFolders.has(folder.id);
+  const { handleToggle, checked, indeterminate } = useFolderToggle(folder, mods);
+
+  return (
+    <div>
+      <FolderContextMenu folderId={folder.id} folderName={folder.name}>
+        <Button
+          variant="light"
+          onClick={() => toggleFolderExpanded(folder.id)}
+          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left"
+        >
+          <span className="h-4 w-4 shrink-0 text-surface-400">
+            {isExpanded && <ChevronDown className="h-4 w-4" />}
+            {!isExpanded && <ChevronRight className="h-4 w-4" />}
+          </span>
+          <FolderOpen className="h-4 w-4 shrink-0 text-accent-400" />
+          <span className="flex-1 truncate text-sm font-medium text-surface-100">
+            {folder.name}
+          </span>
+          <span className="mr-2 text-xs text-surface-500">{mods.length}</span>
+          {mods.length > 0 && (
+            <Checkbox
+              checked={checked}
+              indeterminate={indeterminate}
+              onCheckedChange={handleToggle}
+              size="sm"
+              tabIndex={-1}
+            />
+          )}
+        </Button>
+      </FolderContextMenu>
+
+      {isExpanded && (
+        <div className="ml-[22px] flex rounded-lg bg-surface-800/50 py-1">
+          <div className="mr-2.5 w-px shrink-0 bg-surface-600" />
+          <div className="flex min-w-0 flex-1 flex-col gap-2 py-1 pr-1">
+            {mods.map((mod) => (
+              <ModCard key={mod.id} mod={mod} viewMode="list" onViewDetails={onViewDetails} />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

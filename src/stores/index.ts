@@ -2,6 +2,7 @@ export * from "./deepLink";
 export * from "./devConsole";
 export * from "./displayStore";
 export * from "./libraryFilter";
+export * from "./libraryView";
 export * from "./notifications";
 export * from "./patcherSession";
 export * from "./updater";

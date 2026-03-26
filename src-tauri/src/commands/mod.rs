@@ -18,6 +18,7 @@
 
 mod app;
 mod deep_link;
+mod folders;
 pub(crate) mod hotkeys;
 mod migration;
 mod mods;
@@ -29,6 +30,7 @@ mod workshop;
 
 pub use app::*;
 pub use deep_link::*;
+pub use folders::*;
 pub use hotkeys::*;
 pub use migration::*;
 pub use mods::*;

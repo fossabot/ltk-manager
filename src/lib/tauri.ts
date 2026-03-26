@@ -11,6 +11,7 @@ import type {
   ImportFantomeArgs,
   ImportGitRepoArgs,
   InstalledMod,
+  LibraryFolder,
   ModpkgInfo,
   PackProjectArgs,
   PackResult,
@@ -126,6 +127,21 @@ export const api = {
     invokeResult<Profile>("switch_mod_profile", { profileId }),
   renameModProfile: (profileId: string, newName: string) =>
     invokeResult<Profile>("rename_mod_profile", { profileId, newName }),
+
+  // Folders
+  getFolders: () => invokeResult<LibraryFolder[]>("get_folders"),
+  getFolderOrder: () => invokeResult<string[]>("get_folder_order"),
+  createFolder: (name: string) => invokeResult<LibraryFolder>("create_folder", { name }),
+  renameFolder: (folderId: string, newName: string) =>
+    invokeResult<void>("rename_folder", { folderId, newName }),
+  deleteFolder: (folderId: string) => invokeResult<void>("delete_folder", { folderId }),
+  moveModToFolder: (modId: string, folderId: string) =>
+    invokeResult<void>("move_mod_to_folder", { modId, folderId }),
+  toggleFolder: (folderId: string, enabled: boolean) =>
+    invokeResult<void>("toggle_folder", { folderId, enabled }),
+  reorderFolderMods: (folderId: string, modIds: string[]) =>
+    invokeResult<void>("reorder_folder_mods", { folderId, modIds }),
+  reorderFolders: (folderOrder: string[]) => invokeResult<void>("reorder_folders", { folderOrder }),
 
   // Deep Link
   deepLinkInstallMod: (

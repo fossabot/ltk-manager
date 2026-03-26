@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 
 import type { InstalledMod } from "@/lib/tauri";
+import { sortMods } from "@/modules/library/utils";
 import { useLibraryFilterStore } from "@/stores";
 
 export function useFilteredMods(mods: InstalledMod[], searchQuery: string): InstalledMod[] {
@@ -26,25 +27,6 @@ export function useFilteredMods(mods: InstalledMod[], searchQuery: string): Inst
       result = result.filter((mod) => mod.maps.some((m) => selectedMaps.has(m)));
     }
 
-    if (sort.field === "priority") return result;
-
-    const sorted = [...result];
-    const dir = sort.direction === "asc" ? 1 : -1;
-
-    sorted.sort((a, b) => {
-      switch (sort.field) {
-        case "name":
-          return dir * a.displayName.localeCompare(b.displayName);
-        case "installedAt":
-          return dir * (new Date(a.installedAt).getTime() - new Date(b.installedAt).getTime());
-        case "enabled":
-          if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
-          return a.displayName.localeCompare(b.displayName);
-        default:
-          return 0;
-      }
-    });
-
-    return sorted;
+    return sortMods(result, sort);
   }, [mods, searchQuery, selectedTags, selectedChampions, selectedMaps, sort]);
 }

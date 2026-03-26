@@ -39,6 +39,9 @@
 - Avoid over-engineering: no premature abstractions, no feature flags
   for single-use code, no backwards-compatibility shims. Three similar
   lines are preferred over a premature helper.
+- Frontend components MUST consume global state (hooks, queries, stores)
+  directly where needed, not receive it as drilled props. Props are only
+  appropriate for parent-owned UI coordination (e.g., dialog state).
 
 ### II. Type Safety & Error Handling
 

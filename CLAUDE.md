@@ -81,6 +81,18 @@ import { useToast } from "@/components/Toast";
 import { ModCard } from "@/modules/library/components";
 ```
 
+### State Consumption — Hooks Over Prop Drilling
+
+**Consume global state (hooks, queries, stores) directly in the component that needs it.** Do not drill Zustand state, TanStack Query data, or mutation callbacks through intermediate components as props.
+
+- Patcher status → call `usePatcherStatus()` in the component that checks it
+- Mod toggle/uninstall → call `useToggleMod()` / `useUninstallMod()` in `ModCard`, not passed from a parent
+- Folder toggle → call `useFolderToggle()` in `FolderRow`/`FolderCard`, not received as a prop
+
+TanStack Query deduplicates identical queries, so multiple components calling the same hook is efficient and correct.
+
+**Exception:** Props are appropriate for coordinating parent-owned UI state (e.g., `onViewDetails` that opens a sibling dialog, `onReorder` where reorder target varies by context).
+
 ## Backend (Rust) — `src-tauri/src/`
 
 ### Module Layout

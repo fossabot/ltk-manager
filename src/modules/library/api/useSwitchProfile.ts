@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 
 import { api, type AppError, type Profile } from "@/lib/tauri";
 import { unwrapForQuery } from "@/utils/query";
@@ -10,6 +11,7 @@ import { libraryKeys } from "./keys";
  */
 export function useSwitchProfile() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   return useMutation<Profile, AppError, string>({
     mutationFn: async (profileId) => {
@@ -17,7 +19,7 @@ export function useSwitchProfile() {
       return unwrapForQuery(result);
     },
     onSuccess: () => {
-      // Invalidate active profile and mods since switching changes both
+      navigate({ to: "/" });
       queryClient.invalidateQueries({ queryKey: libraryKeys.activeProfile() });
       queryClient.invalidateQueries({ queryKey: libraryKeys.mods() });
     },

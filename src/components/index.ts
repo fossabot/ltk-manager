@@ -3,6 +3,7 @@ export * from "./Button";
 export * from "./ButtonGroup";
 export * from "./Checkbox";
 export * from "./Combobox";
+export * from "./ContextMenu";
 export * from "./Dialog";
 export * from "./FormField";
 export * from "./Kbd";

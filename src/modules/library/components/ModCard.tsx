@@ -1,10 +1,18 @@
 import { invoke } from "@tauri-apps/api/core";
-import { Copy, EllipsisVertical, FolderOpen, Info, Layers, Trash2 } from "lucide-react";
+import { Copy, EllipsisVertical, FolderOpen, FolderX, Info, Layers, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { IconButton, Menu, Switch, useToast } from "@/components";
 import type { InstalledMod, ModLayer } from "@/lib/tauri";
-import { useEnableModWithLayers } from "@/modules/library/api";
+import {
+  useEnableModWithLayers,
+  useMoveModToFolder,
+  useToggleMod,
+  useUninstallMod,
+} from "@/modules/library/api";
+import { usePatcherStatus } from "@/modules/patcher";
+
+const ROOT_FOLDER_ID = "root";
 import { useModThumbnail } from "@/modules/library/api/useModThumbnail";
 import { getTagLabel } from "@/modules/library/utils/labels";
 
@@ -13,33 +21,32 @@ import { LayerPickerPopover } from "./LayerPickerPopover";
 interface ModCardProps {
   mod: InstalledMod;
   viewMode: "grid" | "list";
-  onToggle: (modId: string, enabled: boolean) => void;
-  onUninstall: (modId: string) => void;
   onViewDetails?: (mod: InstalledMod) => void;
-  disabled?: boolean;
 }
 
-export function ModCard({
-  mod,
-  viewMode,
-  onToggle,
-  onUninstall,
-  onViewDetails,
-  disabled,
-}: ModCardProps) {
+export function ModCard({ mod, viewMode, onViewDetails }: ModCardProps) {
   const { data: thumbnailUrl } = useModThumbnail(mod.id);
   const toast = useToast();
+  const toggleMod = useToggleMod();
+  const uninstallMod = useUninstallMod();
   const enableWithLayers = useEnableModWithLayers();
+  const moveModToFolder = useMoveModToFolder();
+  const { data: patcherStatus } = usePatcherStatus();
   const [pickerOpen, setPickerOpen] = useState(false);
 
+  const disabled = patcherStatus?.running ?? false;
+  const isInUserFolder = mod.folderId != null && mod.folderId !== ROOT_FOLDER_ID;
   const isMultiLayer = mod.layers.length > 1;
 
-  function handleToggleOrPick(modId: string, enabled: boolean) {
+  function handleToggle(modId: string, enabled: boolean) {
     if (enabled && !mod.enabled && isMultiLayer) {
       setPickerOpen(true);
       return;
     }
-    onToggle(modId, enabled);
+    toggleMod.mutate(
+      { modId, enabled },
+      { onError: (error) => console.error("Failed to toggle mod:", error.message) },
+    );
   }
 
   function handlePickerConfirm(layerStates: Record<string, boolean>) {
@@ -51,6 +58,12 @@ export function ModCard({
 
   function handlePickerCancel() {
     setPickerOpen(false);
+  }
+
+  function handleUninstall() {
+    uninstallMod.mutate(mod.id, {
+      onError: (error) => console.error("Failed to uninstall mod:", error.message),
+    });
   }
 
   async function handleCopyId() {
@@ -71,7 +84,7 @@ export function ModCard({
     if ((e.target as HTMLElement).closest("[data-no-toggle]")) {
       return;
     }
-    handleToggleOrPick(mod.id, !mod.enabled);
+    handleToggle(mod.id, !mod.enabled);
   }
 
   if (viewMode === "list") {
@@ -86,7 +99,6 @@ export function ModCard({
             : "border-surface-700 bg-surface-900 hover:-translate-y-px hover:border-surface-600 hover:bg-surface-800/80 hover:shadow-md"
         }`}
       >
-        {/* Thumbnail */}
         <div className="relative h-12 w-[5.25rem] shrink-0 overflow-hidden rounded-lg bg-linear-to-br from-surface-700 to-surface-800">
           {thumbnailUrl ? (
             <img
@@ -103,7 +115,6 @@ export function ModCard({
           )}
         </div>
 
-        {/* Info */}
         <div className="min-w-0 flex-1">
           <h3 className="truncate font-medium text-surface-100">{mod.displayName}</h3>
           <div className="flex items-center gap-1.5">
@@ -115,7 +126,6 @@ export function ModCard({
           </div>
         </div>
 
-        {/* Toggle */}
         <div data-no-toggle onClick={(e) => e.stopPropagation()}>
           {isMultiLayer && !mod.enabled ? (
             <LayerPickerPopover
@@ -132,12 +142,11 @@ export function ModCard({
             <Switch
               disabled={disabled}
               checked={mod.enabled}
-              onCheckedChange={(checked) => handleToggleOrPick(mod.id, checked)}
+              onCheckedChange={(checked) => handleToggle(mod.id, checked)}
             />
           )}
         </div>
 
-        {/* Menu */}
         <div data-no-toggle onClick={(e) => e.stopPropagation()}>
           <Menu.Root>
             <Menu.Trigger
@@ -166,12 +175,22 @@ export function ModCard({
                   <Menu.Item icon={<Copy className="h-4 w-4" />} onClick={handleCopyId}>
                     Copy ID
                   </Menu.Item>
+                  {isInUserFolder && (
+                    <Menu.Item
+                      icon={<FolderX className="h-4 w-4" />}
+                      onClick={() =>
+                        moveModToFolder.mutate({ modId: mod.id, folderId: ROOT_FOLDER_ID })
+                      }
+                    >
+                      Remove from folder
+                    </Menu.Item>
+                  )}
                   <Menu.Separator />
                   <Menu.Item
                     icon={<Trash2 className="h-4 w-4" />}
                     variant="danger"
                     disabled={disabled}
-                    onClick={() => onUninstall(mod.id)}
+                    onClick={handleUninstall}
                   >
                     Uninstall
                   </Menu.Item>
@@ -187,7 +206,7 @@ export function ModCard({
   return (
     <div
       onClick={handleCardClick}
-      className={`group relative rounded-xl border transition-[transform,box-shadow,background-color,border-color] duration-150 ease-out ${
+      className={`group relative flex h-full flex-col rounded-xl border transition-[transform,box-shadow,background-color,border-color] duration-150 ease-out ${
         disabled ? "cursor-default" : "cursor-pointer"
       } ${
         mod.enabled
@@ -195,7 +214,6 @@ export function ModCard({
           : "border-surface-600 bg-surface-800 hover:-translate-y-px hover:border-surface-400 hover:bg-surface-700/80 hover:shadow-md"
       }`}
     >
-      {/* Toggle in top-right corner */}
       <div
         className="absolute top-2 right-2 z-10"
         data-no-toggle
@@ -219,13 +237,12 @@ export function ModCard({
             size="sm"
             disabled={disabled}
             checked={mod.enabled}
-            onCheckedChange={(checked) => handleToggleOrPick(mod.id, checked)}
+            onCheckedChange={(checked) => handleToggle(mod.id, checked)}
             className="shadow-lg data-[unchecked]:bg-surface-600/80 data-[unchecked]:backdrop-blur-sm"
           />
         )}
       </div>
 
-      {/* Thumbnail */}
       <div className="relative aspect-video overflow-hidden rounded-t-xl bg-linear-to-br from-surface-700 to-surface-800">
         {thumbnailUrl ? (
           <img src={thumbnailUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
@@ -238,20 +255,17 @@ export function ModCard({
         )}
       </div>
 
-      {/* Content */}
-      <div className="p-3">
-        {/* Title */}
+      <div className="flex flex-1 flex-col p-3">
         <h3 className="mb-1 line-clamp-1 text-sm font-medium text-surface-100">
           {mod.displayName}
         </h3>
 
-        <div className="mb-1 flex items-center gap-1">
+        <div className="mb-1 flex min-h-5 items-center gap-1">
           <ModPills mod={mod} max={3} />
           {isMultiLayer && <LayerBadge layers={mod.layers} />}
         </div>
 
-        {/* Version, author, and menu on same row */}
-        <div className="flex items-center text-xs text-surface-500">
+        <div className="mt-auto flex items-center text-xs text-surface-500">
           <span>v{mod.version}</span>
           <span className="mx-1">•</span>
           <span className="flex-1 truncate">
@@ -288,12 +302,22 @@ export function ModCard({
                     <Menu.Item icon={<Copy className="h-4 w-4" />} onClick={handleCopyId}>
                       Copy ID
                     </Menu.Item>
+                    {isInUserFolder && (
+                      <Menu.Item
+                        icon={<FolderX className="h-4 w-4" />}
+                        onClick={() =>
+                          moveModToFolder.mutate({ modId: mod.id, folderId: ROOT_FOLDER_ID })
+                        }
+                      >
+                        Remove from folder
+                      </Menu.Item>
+                    )}
                     <Menu.Separator />
                     <Menu.Item
                       icon={<Trash2 className="h-4 w-4" />}
                       variant="danger"
                       disabled={disabled}
-                      onClick={() => onUninstall(mod.id)}
+                      onClick={handleUninstall}
                     >
                       Uninstall
                     </Menu.Item>

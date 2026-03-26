@@ -32,6 +32,15 @@ impl ModLibrary {
                 .map(|s| s.as_str())
                 .collect();
 
+            // Build mod→folder ID lookup
+            let mut mod_folder_map: std::collections::HashMap<&str, &str> =
+                std::collections::HashMap::new();
+            for folder in &index.folders {
+                for mid in &folder.mod_ids {
+                    mod_folder_map.insert(mid.as_str(), folder.id.as_str());
+                }
+            }
+
             let mut result = Vec::new();
             for mod_id in &active_profile.mod_order {
                 let Some(entry) = index.mods.iter().find(|m| &m.id == mod_id) else {
@@ -40,7 +49,12 @@ impl ModLibrary {
                 let enabled = enabled_set.contains(mod_id.as_str());
                 let mod_layer_states = active_profile.layer_states.get(mod_id.as_str());
                 match read_installed_mod(entry, enabled, storage_dir, mod_layer_states) {
-                    Ok(m) => result.push(m),
+                    Ok(mut m) => {
+                        if let Some(&fid) = mod_folder_map.get(mod_id.as_str()) {
+                            m.folder_id = Some(fid.to_string());
+                        }
+                        result.push(m);
+                    }
                     Err(e) => {
                         tracing::warn!("Skipping broken mod entry {}: {}", entry.id, e);
                     }
@@ -294,6 +308,11 @@ impl ModLibrary {
 
             let entry = index.mods.remove(pos);
 
+            // Remove from all folders
+            for folder in &mut index.folders {
+                folder.mod_ids.retain(|id| id != mod_id);
+            }
+
             // Remove from all profiles' mod_order and enabled_mods
             for profile in &mut index.profiles {
                 profile.mod_order.retain(|id| id != mod_id);
@@ -491,6 +510,15 @@ pub(super) fn install_single_mod_to_index(
     };
     index.mods.push(entry.clone());
 
+    // Add to root folder
+    if let Some(root) = index
+        .folders
+        .iter_mut()
+        .find(|f| f.id == super::ROOT_FOLDER_ID)
+    {
+        root.mod_ids.insert(0, id.clone());
+    }
+
     // Enable in active profile and add to display order
     let active_profile_id = index.active_profile_id.clone();
     if let Some(profile) = index
@@ -562,6 +590,7 @@ fn read_installed_mod(
         champions: project.champions.clone(),
         maps: project.maps.iter().map(|m| m.to_string()).collect(),
         mod_dir: mod_dir.display().to_string(),
+        folder_id: None,
     })
 }
 

@@ -211,6 +211,16 @@ fn main() {
             commands::get_mod_thumbnail,
             commands::get_storage_directory,
             commands::reorder_mods,
+            // Folders
+            commands::get_folders,
+            commands::get_folder_order,
+            commands::create_folder,
+            commands::rename_folder,
+            commands::delete_folder,
+            commands::move_mod_to_folder,
+            commands::toggle_folder,
+            commands::reorder_folder_mods,
+            commands::reorder_folders,
             // Migration
             commands::scan_cslol_mods,
             commands::import_cslol_mods,

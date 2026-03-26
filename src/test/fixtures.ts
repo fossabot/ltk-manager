@@ -43,6 +43,7 @@ export function createMockInstalledMod(overrides?: Partial<InstalledMod>): Insta
     champions: [],
     maps: [],
     modDir: "/path/to/mod",
+    folderId: null,
     ...overrides,
   };
 }

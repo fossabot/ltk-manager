@@ -4,29 +4,22 @@ import { GripVertical } from "lucide-react";
 import type { CSSProperties } from "react";
 
 import type { InstalledMod } from "@/lib/tauri";
+import { usePatcherStatus } from "@/modules/patcher";
 
 import { ModCard } from "./ModCard";
 
 interface SortableModCardProps {
   mod: InstalledMod;
   viewMode: "grid" | "list";
-  onToggle: (modId: string, enabled: boolean) => void;
-  onUninstall: (modId: string) => void;
   onViewDetails?: (mod: InstalledMod) => void;
-  disabled?: boolean;
 }
 
-export function SortableModCard({
-  mod,
-  viewMode,
-  onToggle,
-  onUninstall,
-  onViewDetails,
-  disabled,
-}: SortableModCardProps) {
+export function SortableModCard({ mod, viewMode, onViewDetails }: SortableModCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: mod.id,
   });
+  const { data: patcherStatus } = usePatcherStatus();
+  const disabled = patcherStatus?.running ?? false;
 
   const style: CSSProperties = {
     transform: CSS.Translate.toString(transform),
@@ -34,48 +27,46 @@ export function SortableModCard({
     willChange: transform ? "transform" : undefined,
   };
 
+  if (viewMode === "list") {
+    return (
+      <div
+        ref={setNodeRef}
+        style={style}
+        className={`group/sortable relative flex items-center gap-0 rounded-xl ${isDragging ? "z-0" : ""}`}
+      >
+        {isDragging && (
+          <div className="absolute inset-0 rounded-xl border-2 border-dashed border-accent-500/40 bg-accent-500/5" />
+        )}
+        {!disabled && (
+          <div
+            className={`flex shrink-0 items-center px-2 py-3 text-surface-500 opacity-0 transition-opacity group-hover/sortable:opacity-100 ${isDragging ? "cursor-grabbing" : "cursor-grab"}`}
+            data-no-toggle
+            onClick={(e) => e.stopPropagation()}
+            {...attributes}
+            {...listeners}
+          >
+            <GripVertical className="h-5 w-5" />
+          </div>
+        )}
+        <div className={`min-w-0 flex-1 ${isDragging ? "invisible" : ""}`}>
+          <ModCard mod={mod} viewMode={viewMode} onViewDetails={onViewDetails} />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className={`group/sortable relative rounded-xl ${isDragging ? "z-0" : ""}`}
+      className={`group/sortable relative h-full rounded-xl ${isDragging ? "z-0" : ""}`}
+      {...(disabled ? {} : { ...attributes, ...listeners })}
     >
       {isDragging && (
         <div className="absolute inset-0 rounded-xl border-2 border-dashed border-accent-500/40 bg-accent-500/5" />
       )}
-      {/* Drag handle */}
-      {!disabled && viewMode === "list" && (
-        <div
-          className={`absolute top-1/2 -left-7 z-10 flex -translate-y-1/2 items-center opacity-0 transition-opacity group-hover/sortable:opacity-100 ${isDragging ? "cursor-grabbing" : "cursor-grab"}`}
-          data-no-toggle
-          onClick={(e) => e.stopPropagation()}
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical className="h-5 w-5 text-surface-500" />
-        </div>
-      )}
-      {!disabled && viewMode !== "list" && (
-        <div
-          className={`absolute top-2 left-2 z-10 flex items-center rounded-md bg-surface-900/80 p-1 opacity-0 backdrop-blur-sm transition-opacity group-hover/sortable:opacity-100 ${isDragging ? "cursor-grabbing" : "cursor-grab"}`}
-          data-no-toggle
-          onClick={(e) => e.stopPropagation()}
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical className="h-4 w-4 text-surface-400" />
-        </div>
-      )}
-
-      <div className={isDragging ? "invisible" : undefined}>
-        <ModCard
-          mod={mod}
-          viewMode={viewMode}
-          onToggle={onToggle}
-          onUninstall={onUninstall}
-          onViewDetails={onViewDetails}
-          disabled={disabled}
-        />
+      <div className={`h-full ${isDragging ? "invisible" : ""}`}>
+        <ModCard mod={mod} viewMode={viewMode} onViewDetails={onViewDetails} />
       </div>
     </div>
   );

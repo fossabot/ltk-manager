@@ -16,7 +16,11 @@ import { MigrationBanner, MigrationWizardDialog } from "@/modules/migration";
 import { usePatcherStatus, useStartPatcher, useStopPatcher } from "@/modules/patcher";
 import { useSaveSettings, useSettings } from "@/modules/settings";
 
-export function Library() {
+interface LibraryProps {
+  folderId?: string;
+}
+
+export function Library({ folderId }: LibraryProps = {}) {
   const [searchQuery, setSearchQuery] = useState("");
   const [migrationOpen, setMigrationOpen] = useState(false);
 
@@ -105,11 +109,9 @@ export function Library() {
       <LibraryContent
         mods={mods}
         searchQuery={searchQuery}
-        actions={actions}
         isLoading={isLoading}
         error={error}
-        onInstall={actions.handleInstallMod}
-        isPatcherActive={isPatcherActive}
+        folderId={folderId}
       />
       <ImportProgressDialog
         open={actions.importDialogOpen}

@@ -3,17 +3,4 @@
 /**
  * A saved author profile that can be reused across workshop projects.
  */
-export type AuthorProfile = {
-  /**
-   * Stable UUID for referencing this profile.
-   */
-  id: string;
-  /**
-   * Author display name.
-   */
-  name: string;
-  /**
-   * Default role for this author (e.g. "3D Artist").
-   */
-  role: string | null;
-};
+export type AuthorProfile = { id: string; name: string; role: string | null };

@@ -47,7 +47,7 @@ export default tseslint.config(
     },
   },
   {
-    ignores: ["dist/", "node_modules/", "src-tauri/", "gen/", "prettier.config.js"],
+    ignores: ["dist/", "node_modules/", "src-tauri/", "target/", "gen/", "prettier.config.js"],
   },
   eslintConfigPrettier,
 );

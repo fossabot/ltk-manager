@@ -18,6 +18,7 @@ export type { ImportGitRepoArgs } from "./ImportGitRepoArgs";
 export type { InstalledMod } from "./InstalledMod";
 export type { InstallProgress } from "./InstallProgress";
 export type { LayerInfo } from "./LayerInfo";
+export type { LibraryFolder } from "./LibraryFolder";
 export type { MigrationPhase } from "./MigrationPhase";
 export type { MigrationProgress } from "./MigrationProgress";
 export type { ModLayer } from "./ModLayer";

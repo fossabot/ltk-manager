@@ -21,4 +21,8 @@ export type InstalledMod = {
    * Directory where the mod is installed
    */
   modDir: string;
+  /**
+   * ID of the containing folder, or None if ungrouped.
+   */
+  folderId: string | null;
 };

@@ -5,6 +5,7 @@ import type { PatcherStatus } from "@/lib/tauri";
 import type { useLibraryActions } from "@/modules/library/api";
 import { useLibraryViewMode } from "@/modules/library/api";
 
+import { CreateFolderDialog } from "./CreateFolderDialog";
 import { ProfileSelector } from "./ProfileSelector";
 import { SortDropdown } from "./SortDropdown";
 
@@ -65,6 +66,7 @@ export function LibraryToolbar({
         />
       </div>
 
+      <CreateFolderDialog />
       <SortDropdown />
 
       {/* View toggle */}

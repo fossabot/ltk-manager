@@ -28,6 +28,7 @@ target/
 
 # ts-rs default output (real bindings go to src/lib/bindings/)
 src-tauri/bindings/
+src-tauri/src/lib/bindings/
 
 # AI local settings
 .claude/

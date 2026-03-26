@@ -1,38 +1,51 @@
 import {
   closestCenter,
+  type CollisionDetection,
   DndContext,
-  type DragOverEvent,
   DragOverlay,
-  type DragStartEvent,
   KeyboardSensor,
   PointerSensor,
+  pointerWithin,
+  useDroppable,
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
 import {
-  arrayMove,
   rectSortingStrategy,
   SortableContext,
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { FolderOutput } from "lucide-react";
 
 import type { InstalledMod } from "@/lib/tauri";
+import { useSortableModDnd } from "@/modules/library/api";
 
 import { ModCard } from "./ModCard";
 import { SortableModCard } from "./SortableModCard";
+
+const REMOVE_FROM_FOLDER_ID = "remove-from-folder";
+
+/**
+ * Checks pointer-within for the remove zone first; if the pointer is
+ * inside it, that wins. Otherwise falls back to closestCenter for
+ * normal sortable reordering.
+ */
+const removeZoneFirstCollision: CollisionDetection = (args) => {
+  const pointerCollisions = pointerWithin(args);
+  const removeHit = pointerCollisions.find((c) => c.id === REMOVE_FROM_FOLDER_ID);
+  if (removeHit) return [removeHit];
+  return closestCenter(args);
+};
 
 interface SortableModListProps {
   mods: InstalledMod[];
   viewMode: "grid" | "list";
   onReorder: (modIds: string[]) => void;
   disabled?: boolean;
-  onToggle: (modId: string, enabled: boolean) => void;
-  onUninstall: (modId: string) => void;
   onViewDetails?: (mod: InstalledMod) => void;
-  isPatcherActive?: boolean;
   className?: string;
+  folderId?: string;
 }
 
 export function SortableModList({
@@ -40,83 +53,31 @@ export function SortableModList({
   viewMode,
   onReorder,
   disabled,
-  onToggle,
-  onUninstall,
   onViewDetails,
-  isPatcherActive,
   className,
+  folderId,
 }: SortableModListProps) {
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const [localOrder, setLocalOrder] = useState<string[]>(() => mods.map((m) => m.id));
-  const lastPropsOrder = useRef<string[]>(localOrder);
+  const {
+    localOrder,
+    orderedMods,
+    activeId,
+    activeMod,
+    handleDragStart,
+    handleDragOver,
+    handleDragEnd,
+    handleDragCancel,
+  } = useSortableModDnd({ mods, onReorder, folderId });
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
-  const propsOrder = useMemo(() => mods.map((m) => m.id), [mods]);
-
-  useEffect(() => {
-    if (propsOrder.join() !== lastPropsOrder.current.join()) {
-      lastPropsOrder.current = propsOrder;
-      if (!activeId) {
-        setLocalOrder(propsOrder);
-      }
-    }
-  }, [propsOrder, activeId]);
-
-  const modMap = useMemo(() => new Map(mods.map((m) => [m.id, m])), [mods]);
-
-  const orderedMods = useMemo(
-    () => localOrder.map((id) => modMap.get(id)).filter(Boolean) as InstalledMod[],
-    [localOrder, modMap],
-  );
-
-  const activeMod = activeId ? (modMap.get(activeId) ?? null) : null;
-
-  function handleDragStart(event: DragStartEvent) {
-    setActiveId(event.active.id as string);
-  }
-
-  function handleDragOver(event: DragOverEvent) {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-
-    setLocalOrder((prev) => {
-      const oldIndex = prev.indexOf(active.id as string);
-      const newIndex = prev.indexOf(over.id as string);
-      if (oldIndex === -1 || newIndex === -1) return prev;
-      return arrayMove(prev, oldIndex, newIndex);
-    });
-  }
-
-  function handleDragEnd() {
-    setActiveId(null);
-    const changed = localOrder.join() !== propsOrder.join();
-    if (changed) {
-      onReorder(localOrder);
-    }
-  }
-
-  function handleDragCancel() {
-    setActiveId(null);
-    setLocalOrder(propsOrder);
-  }
-
   if (disabled) {
     return (
       <div className={className}>
         {mods.map((mod) => (
-          <ModCard
-            key={mod.id}
-            mod={mod}
-            viewMode={viewMode}
-            onToggle={onToggle}
-            onUninstall={onUninstall}
-            onViewDetails={onViewDetails}
-            disabled={isPatcherActive}
-          />
+          <ModCard key={mod.id} mod={mod} viewMode={viewMode} onViewDetails={onViewDetails} />
         ))}
       </div>
     );
@@ -125,7 +86,7 @@ export function SortableModList({
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCenter}
+      collisionDetection={folderId ? removeZoneFirstCollision : closestCenter}
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
@@ -135,33 +96,43 @@ export function SortableModList({
         items={localOrder}
         strategy={viewMode === "list" ? verticalListSortingStrategy : rectSortingStrategy}
       >
+        {folderId && <RemoveFromFolderZone visible={!!activeId} />}
         <div className={className}>
           {orderedMods.map((mod) => (
             <SortableModCard
               key={mod.id}
               mod={mod}
               viewMode={viewMode}
-              onToggle={onToggle}
-              onUninstall={onUninstall}
               onViewDetails={onViewDetails}
-              disabled={isPatcherActive}
             />
           ))}
         </div>
       </SortableContext>
       <DragOverlay dropAnimation={null}>
-        {activeMod ? (
+        {activeMod && (
           <div className="scale-[1.02] cursor-grabbing rounded-xl shadow-lg ring-2 ring-accent-500/30">
-            <ModCard
-              mod={activeMod}
-              viewMode={viewMode}
-              onToggle={onToggle}
-              onUninstall={onUninstall}
-              onViewDetails={onViewDetails}
-            />
+            <ModCard mod={activeMod} viewMode={viewMode} onViewDetails={onViewDetails} />
           </div>
-        ) : null}
+        )}
       </DragOverlay>
     </DndContext>
+  );
+}
+
+function RemoveFromFolderZone({ visible }: { visible: boolean }) {
+  const { setNodeRef, isOver } = useDroppable({ id: REMOVE_FROM_FOLDER_ID });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`flex w-full items-center justify-center gap-2 overflow-hidden rounded-xl border-2 border-dashed transition-all duration-200 ease-out ${
+        visible ? "mb-4 max-h-14 p-4 opacity-100" : "max-h-0 border-transparent p-0 opacity-0"
+      } ${
+        isOver ? "border-red-500 bg-red-500/10 text-red-400" : "border-surface-600 text-surface-400"
+      }`}
+    >
+      <FolderOutput className="h-5 w-5 shrink-0" />
+      <span className="text-sm font-medium whitespace-nowrap">Drop here to remove from folder</span>
+    </div>
   );
 }

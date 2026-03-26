@@ -75,12 +75,6 @@ export type Settings = {
    * Additional WAD files to exclude from overlay building.
    */
   wadBlocklist: Array<string>;
-  /**
-   * Saved author profiles for the Creator Workshop.
-   */
   authorProfiles: Array<AuthorProfile>;
-  /**
-   * ID of the default author profile auto-selected for new projects.
-   */
   defaultAuthorProfileId: string | null;
 };
