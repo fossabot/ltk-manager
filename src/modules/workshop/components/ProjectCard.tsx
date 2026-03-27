@@ -1,13 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import {
-  ChevronRight,
-  EllipsisVertical,
-  FolderOpen,
-  Package,
-  Pencil,
-  Play,
-  Trash2,
-} from "lucide-react";
+import { EllipsisVertical, FolderOpen, Package, Pencil, Play, Trash2 } from "lucide-react";
 import { useMemo } from "react";
 import { twMerge } from "tailwind-merge";
 
@@ -77,19 +69,22 @@ export function ProjectCard({ project, viewMode, onEdit }: ProjectCardProps) {
     return (
       <div
         className={twMerge(
-          "group flex items-center gap-4 rounded-lg border bg-surface-900 p-4 transition-[transform,box-shadow,background-color,border-color] duration-150 ease-out hover:-translate-y-px hover:border-surface-600 hover:shadow-md",
+          "group flex cursor-pointer items-center gap-4 rounded-lg border bg-surface-900 p-4 transition-[transform,box-shadow,background-color,border-color] duration-150 ease-out hover:-translate-y-px hover:border-surface-600 hover:shadow-md",
           listBorderClass,
           isPatcherActive && !isTesting && "opacity-50",
         )}
+        onClick={() => onEdit(project)}
       >
-        <Checkbox
-          size="md"
-          checked={isPatcherActive ? isTesting : selected}
-          onCheckedChange={() => toggle(project.path)}
-          disabled={isPatcherActive}
-        />
+        <div onClick={(e) => e.stopPropagation()}>
+          <Checkbox
+            size="md"
+            checked={isPatcherActive ? isTesting : selected}
+            onCheckedChange={() => toggle(project.path)}
+            disabled={isPatcherActive}
+          />
+        </div>
 
-        <div className="relative h-12 w-[5.25rem] shrink-0 overflow-hidden rounded-lg bg-linear-to-br from-surface-700 to-surface-800">
+        <div className="relative h-12 w-21 shrink-0 overflow-hidden rounded-lg bg-linear-to-br from-surface-700 to-surface-800">
           {thumbnailUrl ? (
             <img
               src={thumbnailUrl}
@@ -106,12 +101,8 @@ export function ProjectCard({ project, viewMode, onEdit }: ProjectCardProps) {
         </div>
 
         <div className="min-w-0 flex-1">
-          <h3
-            className="group/title flex cursor-pointer items-center gap-1 font-medium text-surface-100 hover:text-accent-400"
-            onClick={() => onEdit(project)}
-          >
+          <h3 className="font-medium text-surface-100">
             <span className="truncate">{project.displayName}</span>
-            <ChevronRight className="h-3.5 w-3.5 shrink-0 opacity-0 transition-opacity group-hover/title:opacity-100" />
           </h3>
           <p className="truncate text-sm text-surface-500">
             v{project.version} • {project.authors.map((a) => a.name).join(", ") || "Unknown author"}
@@ -125,7 +116,7 @@ export function ProjectCard({ project, viewMode, onEdit }: ProjectCardProps) {
           </span>
         )}
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
           <Button
             variant="outline"
             size="sm"
@@ -187,12 +178,6 @@ export function ProjectCard({ project, viewMode, onEdit }: ProjectCardProps) {
               </Menu.Positioner>
             </Menu.Portal>
           </Menu.Root>
-          <IconButton
-            icon={<ChevronRight />}
-            variant="ghost"
-            size="sm"
-            onClick={() => onEdit(project)}
-          />
         </div>
       </div>
     );
@@ -207,10 +192,11 @@ export function ProjectCard({ project, viewMode, onEdit }: ProjectCardProps) {
   return (
     <div
       className={twMerge(
-        "group relative rounded-xl border bg-surface-800 transition-[transform,box-shadow,background-color,border-color] duration-150 ease-out hover:-translate-y-px hover:border-surface-400 hover:shadow-md",
+        "group relative cursor-pointer rounded-xl border bg-surface-800 transition-[transform,box-shadow,background-color,border-color] duration-150 ease-out hover:-translate-y-px hover:border-surface-400 hover:shadow-md",
         gridBorderClass,
         isPatcherActive && !isTesting && "opacity-50",
       )}
+      onClick={() => onEdit(project)}
     >
       <div
         className={twMerge(
@@ -218,6 +204,7 @@ export function ProjectCard({ project, viewMode, onEdit }: ProjectCardProps) {
           isPatcherActive ? "cursor-not-allowed" : "cursor-pointer",
         )}
         onClick={(e) => {
+          e.stopPropagation();
           if (!isPatcherActive && e.target === e.currentTarget) toggle(project.path);
         }}
       >
@@ -243,12 +230,8 @@ export function ProjectCard({ project, viewMode, onEdit }: ProjectCardProps) {
 
       <div className="flex items-start gap-1 p-3">
         <div className="min-w-0 flex-1">
-          <h3
-            className="group/title mb-1 flex cursor-pointer items-center gap-1 text-sm font-medium text-surface-100 hover:text-accent-400"
-            onClick={() => onEdit(project)}
-          >
+          <h3 className="mb-1 text-sm font-medium text-surface-100">
             <span className="line-clamp-1">{project.displayName}</span>
-            <ChevronRight className="h-3.5 w-3.5 shrink-0 opacity-0 transition-opacity group-hover/title:opacity-100" />
           </h3>
           <ProjectPills project={project} max={3} className="mb-1" />
           <div className="flex items-center gap-1.5 text-xs text-surface-500">
@@ -264,44 +247,46 @@ export function ProjectCard({ project, viewMode, onEdit }: ProjectCardProps) {
             )}
           </div>
         </div>
-        <Menu.Root>
-          <Menu.Trigger
-            render={<IconButton icon={<EllipsisVertical />} variant="ghost" size="md" compact />}
-          />
-          <Menu.Portal>
-            <Menu.Positioner>
-              <Menu.Popup>
-                <Menu.Item icon={<Pencil className="h-4 w-4" />} onClick={() => onEdit(project)}>
-                  Edit Project
-                </Menu.Item>
-                <Menu.Item
-                  icon={<Play className="h-4 w-4" />}
-                  onClick={handleTest}
-                  disabled={isPatcherActive}
-                >
-                  Test
-                </Menu.Item>
-                <Menu.Item
-                  icon={<Package className="h-4 w-4" />}
-                  onClick={() => openPackDialog(project)}
-                >
-                  Pack
-                </Menu.Item>
-                <Menu.Item icon={<FolderOpen className="h-4 w-4" />} onClick={handleOpenLocation}>
-                  Open Location
-                </Menu.Item>
-                <Menu.Separator />
-                <Menu.Item
-                  icon={<Trash2 className="h-4 w-4" />}
-                  variant="danger"
-                  onClick={() => openDeleteDialog(project)}
-                >
-                  Delete
-                </Menu.Item>
-              </Menu.Popup>
-            </Menu.Positioner>
-          </Menu.Portal>
-        </Menu.Root>
+        <div onClick={(e) => e.stopPropagation()}>
+          <Menu.Root>
+            <Menu.Trigger
+              render={<IconButton icon={<EllipsisVertical />} variant="ghost" size="md" compact />}
+            />
+            <Menu.Portal>
+              <Menu.Positioner>
+                <Menu.Popup>
+                  <Menu.Item icon={<Pencil className="h-4 w-4" />} onClick={() => onEdit(project)}>
+                    Edit Project
+                  </Menu.Item>
+                  <Menu.Item
+                    icon={<Play className="h-4 w-4" />}
+                    onClick={handleTest}
+                    disabled={isPatcherActive}
+                  >
+                    Test
+                  </Menu.Item>
+                  <Menu.Item
+                    icon={<Package className="h-4 w-4" />}
+                    onClick={() => openPackDialog(project)}
+                  >
+                    Pack
+                  </Menu.Item>
+                  <Menu.Item icon={<FolderOpen className="h-4 w-4" />} onClick={handleOpenLocation}>
+                    Open Location
+                  </Menu.Item>
+                  <Menu.Separator />
+                  <Menu.Item
+                    icon={<Trash2 className="h-4 w-4" />}
+                    variant="danger"
+                    onClick={() => openDeleteDialog(project)}
+                  >
+                    Delete
+                  </Menu.Item>
+                </Menu.Popup>
+              </Menu.Positioner>
+            </Menu.Portal>
+          </Menu.Root>
+        </div>
       </div>
     </div>
   );
