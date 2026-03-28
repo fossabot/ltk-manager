@@ -44,6 +44,8 @@ pub enum ErrorCode {
     PatcherRunning,
     /// ZIP error
     Zip,
+    /// Library index was written by a newer app version
+    SchemaVersionTooNew,
 }
 
 /// Structured error response sent over IPC.
@@ -204,6 +206,12 @@ pub enum AppError {
 
     #[error("ZIP error: {0}")]
     ZipError(#[from] zip::result::ZipError),
+
+    #[error("Library index schema version {file_version} is newer than supported version {max_supported}")]
+    SchemaVersionTooNew {
+        file_version: u32,
+        max_supported: u32,
+    },
 }
 
 impl From<AppError> for AppErrorResponse {
@@ -274,6 +282,15 @@ impl From<AppError> for AppErrorResponse {
             ),
 
             AppError::ZipError(e) => AppErrorResponse::new(ErrorCode::Zip, e.to_string()),
+
+            AppError::SchemaVersionTooNew { file_version, max_supported } => AppErrorResponse::new(
+                ErrorCode::SchemaVersionTooNew,
+                format!(
+                    "Your mod library was created by a newer version of the app (schema v{}). This version only supports up to v{}.",
+                    file_version, max_supported
+                ),
+            )
+            .with_context(serde_json::json!({ "fileVersion": file_version, "maxSupported": max_supported })),
         }
     }
 }
@@ -346,6 +363,7 @@ mod tests {
             ErrorCode::Wad,
             ErrorCode::PatcherRunning,
             ErrorCode::Zip,
+            ErrorCode::SchemaVersionTooNew,
         ] {
             let json = serde_json::to_string(&code).unwrap();
             let deserialized: ErrorCode = serde_json::from_str(&json).unwrap();

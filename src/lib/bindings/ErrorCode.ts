@@ -22,4 +22,5 @@ export type ErrorCode =
   | "FANTOME"
   | "WAD"
   | "PATCHER_RUNNING"
-  | "ZIP";
+  | "ZIP"
+  | "SCHEMA_VERSION_TOO_NEW";

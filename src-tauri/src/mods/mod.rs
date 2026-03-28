@@ -3,6 +3,7 @@ mod inspect;
 mod library;
 mod migration;
 mod profiles;
+mod schema_migration;
 pub(crate) mod watcher;
 
 pub use migration::*;
@@ -300,6 +301,10 @@ pub enum MigrationPhase {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct LibraryIndex {
+    /// Schema version for forward/backward compatibility.
+    /// Missing in pre-versioning files (deserializes as 0).
+    #[serde(default)]
+    pub(crate) version: u32,
     pub(super) mods: Vec<LibraryModEntry>,
     pub(super) profiles: Vec<Profile>,
     pub(crate) active_profile_id: String,
@@ -326,6 +331,7 @@ impl Default for LibraryIndex {
         let active_profile_id = default_profile.id.clone();
 
         Self {
+            version: schema_migration::CURRENT_VERSION,
             mods: Vec::new(),
             profiles: vec![default_profile],
             active_profile_id,
@@ -392,7 +398,10 @@ pub(super) fn library_index_path(storage_dir: &Path) -> PathBuf {
 }
 
 /// Load the library index from disk.
-/// Returns a default index if the file doesn't exist.
+///
+/// Returns a default index if the file doesn't exist. For existing files,
+/// detects the schema version and applies any needed migrations via
+/// [`LibraryIndex::load_and_migrate`].
 pub(super) fn load_library_index(storage_dir: &Path) -> AppResult<LibraryIndex> {
     fs::create_dir_all(storage_dir)?;
 
@@ -401,48 +410,16 @@ pub(super) fn load_library_index(storage_dir: &Path) -> AppResult<LibraryIndex> 
         return Ok(LibraryIndex::default());
     }
 
-    let mut index: LibraryIndex =
-        serde_json::from_str(&fs::read_to_string(&path)?).map_err(AppError::from)?;
-
-    // Migration: ensure root folder exists and all mods belong to a folder
-    if !index.folders.iter().any(|f| f.id == ROOT_FOLDER_ID) {
-        // Create root folder with all existing mods (from active profile's mod_order for ordering)
-        let mod_ids = if let Some(profile) = index
-            .profiles
-            .iter()
-            .find(|p| p.id == index.active_profile_id)
-        {
-            profile.mod_order.clone()
-        } else {
-            index.mods.iter().map(|m| m.id.clone()).collect()
-        };
-        index.folders.insert(
-            0,
-            LibraryFolder {
-                id: ROOT_FOLDER_ID.to_string(),
-                name: String::new(),
-                mod_ids,
-            },
-        );
-        if !index.folder_order.contains(&ROOT_FOLDER_ID.to_string()) {
-            index.folder_order.insert(0, ROOT_FOLDER_ID.to_string());
-        }
-        tracing::info!("Migrated library to root folder model");
-    }
-
-    // Ensure folder_order is populated
-    if index.folder_order.is_empty() && !index.folders.is_empty() {
-        index.folder_order = index.folders.iter().map(|f| f.id.clone()).collect();
-        tracing::info!("Populated folder_order from folders list");
-    }
-
-    Ok(index)
+    LibraryIndex::load_and_migrate(storage_dir)
 }
 
 pub(super) fn save_library_index(storage_dir: &Path, index: &LibraryIndex) -> AppResult<()> {
     fs::create_dir_all(storage_dir)?;
     let path = library_index_path(storage_dir);
-    let contents = serde_json::to_string_pretty(index)?;
+    // Ensure the version field is always current when writing
+    let mut to_save = index.clone();
+    to_save.version = schema_migration::CURRENT_VERSION;
+    let contents = serde_json::to_string_pretty(&to_save)?;
     fs::write(path, contents)?;
     Ok(())
 }
@@ -781,6 +758,7 @@ mod tests {
     #[test]
     fn profile_slug_is_unique_in_no_profiles() {
         let index = LibraryIndex {
+            version: 0,
             mods: Vec::new(),
             profiles: Vec::new(),
             active_profile_id: String::new(),
@@ -798,6 +776,7 @@ mod tests {
     #[test]
     fn profile_slug_is_unique_in_with_different_slugs() {
         let index = LibraryIndex {
+            version: 0,
             mods: Vec::new(),
             profiles: vec![Profile {
                 id: "p1".to_string(),
@@ -824,6 +803,7 @@ mod tests {
     #[test]
     fn profile_slug_is_not_unique_when_duplicate() {
         let index = LibraryIndex {
+            version: 0,
             mods: Vec::new(),
             profiles: vec![Profile {
                 id: "p1".to_string(),
@@ -850,6 +830,7 @@ mod tests {
     #[test]
     fn profile_slug_is_unique_when_excluded() {
         let index = LibraryIndex {
+            version: 0,
             mods: Vec::new(),
             profiles: vec![Profile {
                 id: "p1".to_string(),
@@ -912,6 +893,7 @@ mod tests {
     #[test]
     fn get_active_profile_returns_error_when_missing() {
         let index = LibraryIndex {
+            version: 0,
             mods: Vec::new(),
             profiles: Vec::new(),
             active_profile_id: "nonexistent".to_string(),
@@ -1023,6 +1005,7 @@ mod tests {
         place_mod_files(dir.path(), "mod-a", ModArchiveFormat::Modpkg);
 
         let mut index = LibraryIndex {
+            version: 0,
             mods: vec![entry],
             profiles: vec![make_test_profile(
                 "p1",
@@ -1056,6 +1039,7 @@ mod tests {
         fs::write(meta_dir.join("mod.config.json"), "{}").unwrap();
 
         let mut index = LibraryIndex {
+            version: 0,
             mods: vec![entry],
             profiles: vec![make_test_profile(
                 "p1",
@@ -1089,6 +1073,7 @@ mod tests {
         fs::write(archive_dir.join("mod-a.modpkg"), b"fake").unwrap();
 
         let mut index = LibraryIndex {
+            version: 0,
             mods: vec![entry],
             profiles: vec![make_test_profile(
                 "p1",
@@ -1114,6 +1099,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
 
         let mut index = LibraryIndex {
+            version: 0,
             mods: vec![make_test_entry("ghost", ModArchiveFormat::Fantome)],
             profiles: vec![make_test_profile(
                 "p1",
@@ -1143,6 +1129,7 @@ mod tests {
         // "orphan" has no files on disk
 
         let mut index = LibraryIndex {
+            version: 0,
             mods: vec![
                 make_test_entry("valid", ModArchiveFormat::Modpkg),
                 make_test_entry("orphan", ModArchiveFormat::Modpkg),
@@ -1174,6 +1161,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
 
         let mut index = LibraryIndex {
+            version: 0,
             mods: vec![
                 make_test_entry("ghost-1", ModArchiveFormat::Modpkg),
                 make_test_entry("ghost-2", ModArchiveFormat::Fantome),
@@ -1212,6 +1200,7 @@ mod tests {
 
         // Profile only knows about mod-a, but mod-b exists in index
         let mut index = LibraryIndex {
+            version: 0,
             mods: vec![
                 make_test_entry("mod-a", ModArchiveFormat::Modpkg),
                 make_test_entry("mod-b", ModArchiveFormat::Modpkg),
@@ -1244,6 +1233,7 @@ mod tests {
         place_mod_files(dir.path(), "mod-b", ModArchiveFormat::Fantome);
 
         let mut index = LibraryIndex {
+            version: 0,
             mods: vec![
                 make_test_entry("mod-a", ModArchiveFormat::Modpkg),
                 make_test_entry("mod-b", ModArchiveFormat::Fantome),
@@ -1273,6 +1263,7 @@ mod tests {
 
         // Profile references "deleted-mod" which isn't in index.mods at all
         let mut index = LibraryIndex {
+            version: 0,
             mods: vec![make_test_entry("mod-a", ModArchiveFormat::Modpkg)],
             profiles: vec![make_test_profile(
                 "p1",
@@ -1304,6 +1295,7 @@ mod tests {
         // Profile 1 has orphan + mod-a, missing mod-b
         // Profile 2 has only orphan
         let mut index = LibraryIndex {
+            version: 0,
             mods: vec![
                 make_test_entry("mod-a", ModArchiveFormat::Modpkg),
                 make_test_entry("mod-b", ModArchiveFormat::Modpkg),
@@ -1342,6 +1334,7 @@ mod tests {
     fn reconcile_empty_index_returns_false() {
         let dir = tempfile::tempdir().unwrap();
         let mut index = LibraryIndex {
+            version: 0,
             mods: Vec::new(),
             profiles: vec![make_test_profile("p1", "Default", vec![], vec![])],
             active_profile_id: "p1".to_string(),
@@ -1362,6 +1355,7 @@ mod tests {
 
         // Save an index with a mod that has no files on disk
         let index = LibraryIndex {
+            version: 0,
             mods: vec![make_test_entry("ghost", ModArchiveFormat::Modpkg)],
             profiles: vec![make_test_profile(
                 "p1",
@@ -1419,6 +1413,7 @@ mod tests {
         make_fantome_zip(&archives_dir.join("cool-skin.fantome"));
 
         let mut index = LibraryIndex {
+            version: 0,
             mods: Vec::new(),
             profiles: vec![make_test_profile("p1", "Default", vec![], vec![])],
             active_profile_id: "p1".to_string(),
@@ -1448,6 +1443,7 @@ mod tests {
         place_mod_files(dir.path(), "mod-a", ModArchiveFormat::Fantome);
 
         let mut index = LibraryIndex {
+            version: 0,
             mods: vec![make_test_entry("mod-a", ModArchiveFormat::Fantome)],
             profiles: vec![make_test_profile(
                 "p1",
@@ -1478,6 +1474,7 @@ mod tests {
         fs::write(archives_dir.join("corrupt.fantome"), b"not a zip").unwrap();
 
         let mut index = LibraryIndex {
+            version: 0,
             mods: Vec::new(),
             profiles: vec![make_test_profile("p1", "Default", vec![], vec![])],
             active_profile_id: "p1".to_string(),
@@ -1514,6 +1511,7 @@ mod tests {
         filetime::set_file_mtime(&config_path, filetime::FileTime::from_system_time(past)).unwrap();
 
         let mut index = LibraryIndex {
+            version: 0,
             mods: vec![make_test_entry("mod-a", ModArchiveFormat::Fantome)],
             profiles: vec![make_test_profile(
                 "p1",
@@ -1550,6 +1548,7 @@ mod tests {
             .unwrap();
 
         let mut index = LibraryIndex {
+            version: 0,
             mods: vec![make_test_entry("mod-a", ModArchiveFormat::Fantome)],
             profiles: vec![make_test_profile(
                 "p1",
@@ -1623,6 +1622,7 @@ mod tests {
         place_mod_files(dir.path(), "mod-a", ModArchiveFormat::Modpkg);
 
         let index = LibraryIndex {
+            version: 0,
             mods: vec![make_test_entry("mod-a", ModArchiveFormat::Modpkg)],
             profiles: vec![make_test_profile(
                 "p1",

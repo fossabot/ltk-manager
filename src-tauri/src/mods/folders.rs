@@ -406,6 +406,7 @@ mod tests {
         folder_order: Vec<&str>,
     ) -> LibraryIndex {
         LibraryIndex {
+            version: 0,
             mods: mods.into_iter().map(make_mod_entry).collect(),
             profiles: vec![make_profile("default", vec![], vec![])],
             active_profile_id: "default".to_string(),

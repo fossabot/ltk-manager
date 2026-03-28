@@ -1,8 +1,9 @@
-import { Filter, Plus, Search, Upload } from "lucide-react";
+import { AlertTriangle, Filter, Plus, Search, Upload } from "lucide-react";
 
 import { Button, Skeleton } from "@/components";
 import type { AppError } from "@/lib/tauri";
 import { useLibraryActions } from "@/modules/library/api";
+import { hasErrorCode } from "@/utils/errors";
 
 export function LibraryLoadingState() {
   return (
@@ -22,6 +23,20 @@ export function LibraryLoadingState() {
 }
 
 export function LibraryErrorState({ error }: { error: AppError }) {
+  if (hasErrorCode(error, "SCHEMA_VERSION_TOO_NEW")) {
+    return (
+      <div className="flex h-64 flex-col items-center justify-center text-center">
+        <div className="mb-4 rounded-full bg-amber-500/10 p-4">
+          <AlertTriangle className="h-8 w-8 text-amber-400" />
+        </div>
+        <h3 className="mb-1 text-lg font-medium text-surface-300">
+          Mod library requires a newer version
+        </h3>
+        <p className="mb-2 max-w-md text-surface-500">{error.message}</p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-64 flex-col items-center justify-center text-center">
       <div className="mb-4 rounded-full bg-red-500/10 p-4">
