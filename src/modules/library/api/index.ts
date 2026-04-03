@@ -27,6 +27,7 @@ export { useRenameProfile } from "./useRenameProfile";
 export { useReorderMods } from "./useReorderMods";
 export { useRootModDnd } from "./useRootModDnd";
 export { useSetModLayers } from "./useSetModLayers";
+export { useSkinhackFlag } from "./useSkinhackFlag";
 export { useSortableModDnd } from "./useSortableModDnd";
 export { useSwitchProfile } from "./useSwitchProfile";
 export { useToggleMod } from "./useToggleMod";

@@ -9,17 +9,17 @@ import {
   ShieldAlert,
   Trash2,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 import { Dialog, IconButton, Menu, Switch, Tooltip, useToast } from "@/components";
 import type { InstalledMod, ModLayer } from "@/lib/tauri";
 import {
   useEnableModWithLayers,
   useMoveModToFolder,
+  useSkinhackFlag,
   useToggleMod,
   useUninstallMod,
 } from "@/modules/library/api";
-import { checkModForSkinhack } from "@/modules/library/utils/skinhackCheck";
 import { usePatcherStatus } from "@/modules/patcher";
 
 const ROOT_FOLDER_ID = "root";
@@ -43,10 +43,13 @@ export function ModCard({ mod, viewMode, onViewDetails }: ModCardProps) {
   const moveModToFolder = useMoveModToFolder();
   const { data: patcherStatus } = usePatcherStatus();
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [skinhackInfoOpen, setSkinhackInfoOpen] = useState(false);
 
-  const skinhackFlag = useMemo(() => checkModForSkinhack(mod), [mod]);
-  const isFlagged = skinhackFlag != null;
+  const {
+    isFlagged,
+    reason: skinhackReason,
+    infoOpen: skinhackInfoOpen,
+    setInfoOpen: setSkinhackInfoOpen,
+  } = useSkinhackFlag(mod);
   const patcherRunning = patcherStatus?.running ?? false;
   const disabled = isFlagged || patcherRunning;
   const isInUserFolder = mod.folderId != null && mod.folderId !== ROOT_FOLDER_ID;
@@ -133,7 +136,7 @@ export function ModCard({ mod, viewMode, onViewDetails }: ModCardProps) {
           <div className="flex items-center gap-1.5">
             <h3 className="truncate font-medium text-surface-100">{mod.displayName}</h3>
             {isFlagged && (
-              <Tooltip content={skinhackFlag.reason}>
+              <Tooltip content={skinhackReason}>
                 <ShieldAlert className="h-4 w-4 shrink-0 text-red-500" />
               </Tooltip>
             )}
@@ -276,7 +279,7 @@ export function ModCard({ mod, viewMode, onViewDetails }: ModCardProps) {
       </div>
 
       {isFlagged && (
-        <Tooltip content={skinhackFlag.reason}>
+        <Tooltip content={skinhackReason}>
           <div className="absolute top-2 left-2 z-10 rounded-md bg-red-500/90 p-1">
             <ShieldAlert className="h-4 w-4 text-white" />
           </div>

@@ -4,6 +4,7 @@ import { useHotkeys } from "react-hotkeys-hook";
 import { useToast } from "@/components";
 import { api } from "@/lib/tauri";
 import {
+  checkModForSkinhack,
   DragDropOverlay,
   FilterBar,
   ImportProgressDialog,
@@ -14,7 +15,6 @@ import {
   useLibraryActions,
   useModFileDrop,
 } from "@/modules/library";
-import { checkModForSkinhack } from "@/modules/library/utils/skinhackCheck";
 import { MigrationBanner, MigrationWizardDialog } from "@/modules/migration";
 import { usePatcherStatus, useStartPatcher, useStopPatcher } from "@/modules/patcher";
 import { useSaveSettings, useSettings } from "@/modules/settings";
