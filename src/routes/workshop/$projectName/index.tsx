@@ -1,8 +1,8 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Package, Save } from "lucide-react";
+import { Info, Package, Save } from "lucide-react";
 import { useState } from "react";
 
-import { Button, SectionCard, useToast } from "@/components";
+import { Button, Field, SectionCard, Tooltip, useToast } from "@/components";
 import { useAppForm } from "@/lib/form";
 import type { WorkshopAuthor } from "@/lib/tauri";
 import { useSettings } from "@/modules/settings";
@@ -78,8 +78,65 @@ function ProjectOverview() {
               )}
             </form.AppField>
 
-            <form.AppField name="version">
-              {(field) => <field.TextField label="Version" required placeholder="1.0.0" />}
+            <form.AppField
+              name="version"
+              validators={{
+                onChange: ({ value }) => {
+                  if (!value) return "Version is required";
+                  if (
+                    !/^\d+\.\d+\.\d+(-[a-zA-Z0-9]+(\.[a-zA-Z0-9]+)*)?(\+[a-zA-Z0-9]+(\.[a-zA-Z0-9]+)*)?$/.test(
+                      value,
+                    )
+                  ) {
+                    return "Must be a valid version (e.g. 1.0.0)";
+                  }
+                  return undefined;
+                },
+              }}
+            >
+              {(field) => {
+                const hasError = field.state.meta.errors.length > 0;
+                return (
+                  <Field.Root>
+                    <Field.Label required>
+                      <span className="inline-flex items-center gap-1.5">
+                        Version
+                        <Tooltip
+                          content={
+                            <div className="max-w-56 space-y-1.5 py-1">
+                              <p className="font-medium">Semantic Versioning</p>
+                              <p>
+                                Format: <code className="text-accent-400">MAJOR.MINOR.PATCH</code>
+                              </p>
+                              <ul className="list-inside list-disc space-y-0.5 text-surface-300">
+                                <li>MAJOR — breaking changes</li>
+                                <li>MINOR — new features</li>
+                                <li>PATCH — bug fixes</li>
+                              </ul>
+                              <p className="text-surface-400">
+                                Pre-release: <code>1.0.0-beta.1</code>
+                              </p>
+                            </div>
+                          }
+                          side="right"
+                          sideOffset={6}
+                        >
+                          <Info className="h-3.5 w-3.5 cursor-help text-surface-400" />
+                        </Tooltip>
+                      </span>
+                    </Field.Label>
+                    <Field.Description>MAJOR.MINOR.PATCH (e.g. 1.0.0)</Field.Description>
+                    <Field.Control
+                      value={field.state.value}
+                      onChange={(e) => field.handleChange(e.target.value)}
+                      onBlur={field.handleBlur}
+                      hasError={hasError}
+                      placeholder="1.0.0"
+                    />
+                    {hasError && <Field.Error>{field.state.meta.errors.join(", ")}</Field.Error>}
+                  </Field.Root>
+                );
+              }}
             </form.AppField>
 
             <form.AppField name="description">
