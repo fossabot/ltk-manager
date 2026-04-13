@@ -134,6 +134,12 @@ pub(crate) fn start_patcher_inner(
     settings: &State<SettingsState>,
     library: &State<ModLibraryState>,
 ) -> AppResult<()> {
+    if cfg!(not(target_os = "windows")) {
+        return Err(AppError::Other(
+            "The patcher is not yet available on this platform".to_string(),
+        ));
+    }
+
     // Lock briefly: check state, set phase, clone what we need for the thread
     let (stop_flag, state_arc) = {
         let mut patcher_state = state.0.lock().mutex_err()?;
