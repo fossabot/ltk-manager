@@ -33,7 +33,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["msi"],
+    "targets": "all",
     "resources": {
       "resources/**/*": "./"
     },
@@ -49,6 +49,9 @@
       "webviewInstallMode": {
         "type": "downloadBootstrapper"
       }
+    },
+    "macOS": {
+      "minimumSystemVersion": "10.15"
     },
     "createUpdaterArtifacts": true
   },
