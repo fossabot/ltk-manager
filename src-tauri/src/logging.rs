@@ -146,10 +146,22 @@ pub fn cleanup_old_logs(log_dir: &Path, max_age_days: u64) {
 pub(crate) fn default_log_dir() -> Option<PathBuf> {
     const IDENTIFIER: &str = "dev.leaguetoolkit.manager";
 
+    #[cfg(target_os = "windows")]
     if let Ok(appdata) = std::env::var("APPDATA") {
         return Some(PathBuf::from(appdata).join(IDENTIFIER).join("logs"));
     }
 
+    #[cfg(target_os = "macos")]
+    if let Ok(home) = std::env::var("HOME") {
+        return Some(
+            PathBuf::from(home)
+                .join("Library")
+                .join("Logs")
+                .join(IDENTIFIER),
+        );
+    }
+
+    #[cfg(target_os = "linux")]
     if let Ok(home) = std::env::var("HOME") {
         return Some(
             PathBuf::from(home)
