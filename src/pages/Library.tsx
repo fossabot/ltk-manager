@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 
 import { useToast } from "@/components";
+import { usePlatformSupport } from "@/hooks";
 import { api } from "@/lib/tauri";
 import {
   checkModForSkinhack,
@@ -16,7 +17,12 @@ import {
   useModFileDrop,
 } from "@/modules/library";
 import { MigrationBanner, MigrationWizardDialog } from "@/modules/migration";
-import { usePatcherStatus, useStartPatcher, useStopPatcher } from "@/modules/patcher";
+import {
+  PatcherUnsupported,
+  usePatcherStatus,
+  useStartPatcher,
+  useStopPatcher,
+} from "@/modules/patcher";
 import { useSaveSettings, useSettings } from "@/modules/settings";
 
 interface LibraryProps {
@@ -26,6 +32,9 @@ interface LibraryProps {
 export function Library({ folderId }: LibraryProps = {}) {
   const [searchQuery, setSearchQuery] = useState("");
   const [migrationOpen, setMigrationOpen] = useState(false);
+
+  const { data: platform } = usePlatformSupport();
+  const patcherAvailable = platform?.patcherAvailable ?? true;
 
   const { data: mods = [], isLoading, error } = useInstalledMods();
   const actions = useLibraryActions();
@@ -111,17 +120,26 @@ export function Library({ folderId }: LibraryProps = {}) {
           onDismiss={handleDismissMigration}
         />
       )}
+      {!patcherAvailable && (
+        <div className="px-4 pt-3">
+          <PatcherUnsupported />
+        </div>
+      )}
       <LibraryToolbar
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         actions={actions}
-        patcher={{
-          status: patcherStatus,
-          isStarting: isStarting,
-          isStopping: stopPatcher.isPending,
-          onStart: handleStartPatcher,
-          onStop: handleStopPatcher,
-        }}
+        patcher={
+          patcherAvailable
+            ? {
+                status: patcherStatus,
+                isStarting: isStarting,
+                isStopping: stopPatcher.isPending,
+                onStart: handleStartPatcher,
+                onStop: handleStopPatcher,
+              }
+            : undefined
+        }
         hasEnabledMods={hasEnabledMods}
         isLoading={isLoading}
         isPatcherActive={isPatcherActive}

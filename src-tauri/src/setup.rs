@@ -59,6 +59,13 @@ pub fn run(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
     crate::tray::setup(app)?;
 
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(window) = app_handle.get_webview_window("main") {
+            let _ = window.set_decorations(true);
+        }
+    }
+
     {
         let settings_state: tauri::State<'_, SettingsState> = app_handle.state();
         let settings = settings_state.0.lock().unwrap();

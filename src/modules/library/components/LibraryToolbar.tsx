@@ -20,7 +20,7 @@ interface LibraryToolbarProps {
   searchQuery: string;
   onSearchChange: (query: string) => void;
   actions: ReturnType<typeof useLibraryActions>;
-  patcher: PatcherProps;
+  patcher?: PatcherProps;
   hasEnabledMods: boolean;
   isLoading: boolean;
   isPatcherActive: boolean;
@@ -98,46 +98,48 @@ export function LibraryToolbar({
           </Button>
         </Tooltip>
 
-        <Tooltip
-          content={
-            <>
-              Toggle patcher <Kbd shortcut="Ctrl+P" />
-            </>
-          }
-        >
-          {patcher.status?.running ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={patcher.onStop}
-              loading={patcher.isStopping}
-              disabled={
-                actions.installMod.isPending ||
-                actions.bulkInstallMods.isPending ||
-                patcher.isStopping
-              }
-            >
-              {patcher.isStopping ? "Stopping..." : "Stop Patcher"}
-            </Button>
-          ) : (
-            <Button
-              variant={hasEnabledMods ? "filled" : "default"}
-              size="sm"
-              onClick={patcher.onStart}
-              loading={patcher.isStarting}
-              disabled={
-                isLoading ||
-                !hasEnabledMods ||
-                actions.installMod.isPending ||
-                actions.bulkInstallMods.isPending ||
-                patcher.isStopping ||
-                patcher.isStarting
-              }
-            >
-              {patcher.isStarting ? "Starting..." : "Start Patcher"}
-            </Button>
-          )}
-        </Tooltip>
+        {patcher && (
+          <Tooltip
+            content={
+              <>
+                Toggle patcher <Kbd shortcut="Ctrl+P" />
+              </>
+            }
+          >
+            {patcher.status?.running ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={patcher.onStop}
+                loading={patcher.isStopping}
+                disabled={
+                  actions.installMod.isPending ||
+                  actions.bulkInstallMods.isPending ||
+                  patcher.isStopping
+                }
+              >
+                {patcher.isStopping ? "Stopping..." : "Stop Patcher"}
+              </Button>
+            ) : (
+              <Button
+                variant={hasEnabledMods ? "filled" : "default"}
+                size="sm"
+                onClick={patcher.onStart}
+                loading={patcher.isStarting}
+                disabled={
+                  isLoading ||
+                  !hasEnabledMods ||
+                  actions.installMod.isPending ||
+                  actions.bulkInstallMods.isPending ||
+                  patcher.isStopping ||
+                  patcher.isStarting
+                }
+              >
+                {patcher.isStarting ? "Starting..." : "Start Patcher"}
+              </Button>
+            )}
+          </Tooltip>
+        )}
       </div>
     </div>
   );
