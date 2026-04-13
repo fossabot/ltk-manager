@@ -250,8 +250,8 @@ pub(crate) fn start_patcher_inner(
         tracing::info!("Using overlay root: {}", overlay_root.display());
 
         let mut overlay_root_str = overlay_root.display().to_string();
-        if !overlay_root_str.ends_with('\\') && !overlay_root_str.ends_with('/') {
-            overlay_root_str.push('\\');
+        if !overlay_root_str.ends_with(std::path::MAIN_SEPARATOR) {
+            overlay_root_str.push(std::path::MAIN_SEPARATOR);
         }
 
         // Phase 2: Run patcher loop
