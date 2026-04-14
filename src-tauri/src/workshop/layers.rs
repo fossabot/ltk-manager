@@ -1,6 +1,6 @@
 use super::{
     find_config_file, is_valid_project_name, load_mod_project, load_workshop_project, Workshop,
-    WorkshopProject,
+    WorkshopLayerInfo, WorkshopProject,
 };
 use crate::error::{AppError, AppResult};
 use ltk_mod_project::ModProjectLayer;
@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 pub(crate) fn create_layer_at_path(
     path: &Path,
     name: &str,
+    display_name: Option<String>,
     description: Option<String>,
 ) -> AppResult<WorkshopProject> {
     let name = name.trim().to_string();
@@ -42,6 +43,7 @@ pub(crate) fn create_layer_at_path(
 
     mod_project.layers.push(ModProjectLayer {
         name: name.clone(),
+        display_name,
         priority: max_priority + 1,
         description,
         string_overrides: HashMap::new(),
@@ -110,6 +112,72 @@ pub(crate) fn update_layer_description_at_path(
         })?;
 
     layer.description = description;
+
+    let json_config_path = path.join("mod.config.json");
+    let config_content = serde_json::to_string_pretty(&mod_project)?;
+    fs::write(&json_config_path, config_content)?;
+
+    load_workshop_project(path)
+}
+
+/// Rename a layer in a project at the given path.
+///
+/// Updates the display name and derives a new slug from it.
+/// Also renames the layer's content directory.
+pub(crate) fn rename_layer_at_path(
+    path: &Path,
+    layer_name: &str,
+    new_display_name: &str,
+) -> AppResult<WorkshopProject> {
+    if layer_name == "base" {
+        return Err(AppError::ValidationFailed(
+            "Cannot rename the base layer".to_string(),
+        ));
+    }
+
+    let new_display_name = new_display_name.trim().to_string();
+    if new_display_name.is_empty() {
+        return Err(AppError::ValidationFailed(
+            "Display name cannot be empty".to_string(),
+        ));
+    }
+
+    let new_name = slug::slugify(&new_display_name);
+    if new_name.is_empty() {
+        return Err(AppError::ValidationFailed(
+            "Display name must produce a valid slug".to_string(),
+        ));
+    }
+
+    let config_path = find_config_file(path)
+        .ok_or_else(|| AppError::ProjectNotFound(path.display().to_string()))?;
+    let mut mod_project = load_mod_project(&config_path)?;
+
+    if new_name != layer_name && mod_project.layers.iter().any(|l| l.name == new_name) {
+        return Err(AppError::ValidationFailed(format!(
+            "A layer named '{}' already exists",
+            new_name
+        )));
+    }
+
+    let layer = mod_project
+        .layers
+        .iter_mut()
+        .find(|l| l.name == layer_name)
+        .ok_or_else(|| {
+            AppError::ValidationFailed(format!("Layer '{}' not found in project", layer_name))
+        })?;
+
+    layer.display_name = Some(new_display_name);
+    layer.name = new_name.clone();
+
+    if new_name != layer_name {
+        let old_dir = path.join("content").join(layer_name);
+        let new_dir = path.join("content").join(&new_name);
+        if old_dir.exists() {
+            fs::rename(&old_dir, &new_dir)?;
+        }
+    }
 
     let json_config_path = path.join("mod.config.json");
     let config_content = serde_json::to_string_pretty(&mod_project)?;
@@ -206,7 +274,83 @@ pub(crate) fn save_layer_string_overrides_at_path(
     load_workshop_project(path)
 }
 
+/// Get the absolute path to a layer's content directory, creating it if needed.
+pub(crate) fn get_layer_content_path(path: &Path, layer_name: &str) -> AppResult<PathBuf> {
+    let layer_dir = path.join("content").join(layer_name);
+    if !layer_dir.exists() {
+        fs::create_dir_all(&layer_dir)?;
+    }
+    Ok(layer_dir)
+}
+
+fn is_wad_entry(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    lower.ends_with(".wad.client") || lower.ends_with(".wad") || lower.ends_with(".wad.mobile")
+}
+
+/// Collect runtime info about each layer's content directory.
+pub(crate) fn get_layer_info_at_path(
+    path: &Path,
+    layer_names: &[String],
+) -> AppResult<HashMap<String, WorkshopLayerInfo>> {
+    let content_dir = path.join("content");
+    let mut result = HashMap::new();
+
+    for name in layer_names {
+        let layer_dir = content_dir.join(name);
+        let wad_files = if layer_dir.is_dir() {
+            fs::read_dir(&layer_dir)
+                .map(|entries| {
+                    entries
+                        .filter_map(|e| e.ok())
+                        .filter_map(|e| {
+                            let file_name = e.file_name().to_string_lossy().to_string();
+                            if is_wad_entry(&file_name) {
+                                Some(file_name)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        result.insert(name.clone(), WorkshopLayerInfo { wad_files });
+    }
+
+    Ok(result)
+}
+
 impl Workshop {
+    /// Get runtime info for each layer in a project.
+    pub fn get_layer_info(
+        &self,
+        project_path: &str,
+        layer_names: Vec<String>,
+    ) -> AppResult<HashMap<String, WorkshopLayerInfo>> {
+        let path = PathBuf::from(project_path);
+        if !path.exists() {
+            return Err(AppError::ProjectNotFound(project_path.to_string()));
+        }
+        get_layer_info_at_path(&path, &layer_names)
+    }
+
+    /// Get the absolute path to a layer's content directory.
+    pub fn get_layer_content_path(
+        &self,
+        project_path: &str,
+        layer_name: &str,
+    ) -> AppResult<String> {
+        let path = PathBuf::from(project_path);
+        if !path.exists() {
+            return Err(AppError::ProjectNotFound(project_path.to_string()));
+        }
+        let layer_dir = get_layer_content_path(&path, layer_name)?;
+        Ok(layer_dir.display().to_string())
+    }
+
     /// Save string overrides for a specific layer in a workshop project.
     pub fn save_layer_string_overrides(
         &self,
@@ -226,13 +370,28 @@ impl Workshop {
         &self,
         project_path: &str,
         name: &str,
+        display_name: Option<String>,
         description: Option<String>,
     ) -> AppResult<WorkshopProject> {
         let path = PathBuf::from(project_path);
         if !path.exists() {
             return Err(AppError::ProjectNotFound(project_path.to_string()));
         }
-        create_layer_at_path(&path, name, description)
+        create_layer_at_path(&path, name, display_name, description)
+    }
+
+    /// Rename a layer in a workshop project.
+    pub fn rename_layer(
+        &self,
+        project_path: &str,
+        layer_name: &str,
+        new_display_name: &str,
+    ) -> AppResult<WorkshopProject> {
+        let path = PathBuf::from(project_path);
+        if !path.exists() {
+            return Err(AppError::ProjectNotFound(project_path.to_string()));
+        }
+        rename_layer_at_path(&path, layer_name, new_display_name)
     }
 
     /// Delete a layer from a workshop project.
@@ -311,7 +470,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         make_project_with_layers(dir.path(), ltk_mod_project::default_layers());
 
-        let project = create_layer_at_path(dir.path(), "chroma", None).unwrap();
+        let project = create_layer_at_path(dir.path(), "chroma", None, None).unwrap();
 
         assert_eq!(project.layers.len(), 2);
         assert_eq!(project.layers[1].name, "chroma");
@@ -331,11 +490,11 @@ mod tests {
         make_project_with_layers(dir.path(), ltk_mod_project::default_layers());
 
         assert!(matches!(
-            create_layer_at_path(dir.path(), "Bad Name", None),
+            create_layer_at_path(dir.path(), "Bad Name", None, None),
             Err(AppError::ValidationFailed(_))
         ));
         assert!(matches!(
-            create_layer_at_path(dir.path(), "UPPER", None),
+            create_layer_at_path(dir.path(), "UPPER", None, None),
             Err(AppError::ValidationFailed(_))
         ));
     }
@@ -346,7 +505,7 @@ mod tests {
         make_project_with_layers(dir.path(), ltk_mod_project::default_layers());
 
         assert!(matches!(
-            create_layer_at_path(dir.path(), "base", None),
+            create_layer_at_path(dir.path(), "base", None, None),
             Err(AppError::ValidationFailed(msg)) if msg.contains("already exists")
         ));
     }
@@ -382,6 +541,7 @@ mod tests {
                 ModProjectLayer::base(),
                 ModProjectLayer {
                     name: "chroma".to_string(),
+                    display_name: None,
                     priority: 1,
                     description: None,
                     string_overrides: HashMap::new(),
@@ -409,6 +569,7 @@ mod tests {
                 ModProjectLayer::base(),
                 ModProjectLayer {
                     name: "chroma".to_string(),
+                    display_name: None,
                     priority: 1,
                     description: None,
                     string_overrides: HashMap::new(),
@@ -438,12 +599,14 @@ mod tests {
                 ModProjectLayer::base(),
                 ModProjectLayer {
                     name: "chroma".to_string(),
+                    display_name: None,
                     priority: 1,
                     description: None,
                     string_overrides: HashMap::new(),
                 },
                 ModProjectLayer {
                     name: "vfx".to_string(),
+                    display_name: None,
                     priority: 2,
                     description: None,
                     string_overrides: HashMap::new(),
@@ -466,12 +629,14 @@ mod tests {
                 ModProjectLayer::base(),
                 ModProjectLayer {
                     name: "chroma".to_string(),
+                    display_name: None,
                     priority: 1,
                     description: None,
                     string_overrides: HashMap::new(),
                 },
                 ModProjectLayer {
                     name: "vfx".to_string(),
+                    display_name: None,
                     priority: 2,
                     description: None,
                     string_overrides: HashMap::new(),

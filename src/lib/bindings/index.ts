@@ -41,4 +41,5 @@ export type { Theme } from "./Theme";
 export type { ValidationResult } from "./ValidationResult";
 export type { WorkshopAuthor } from "./WorkshopAuthor";
 export type { WorkshopLayer } from "./WorkshopLayer";
+export type { WorkshopLayerInfo } from "./WorkshopLayerInfo";
 export type { WorkshopProject } from "./WorkshopProject";

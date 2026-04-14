@@ -502,6 +502,7 @@ mod tests {
             transformers: Vec::new(),
             layers: vec![ltk_mod_project::ModProjectLayer {
                 name: "chroma".to_string(),
+                display_name: Some("Chroma".to_string()),
                 priority: 1,
                 description: None,
                 string_overrides: HashMap::new(),

@@ -1,6 +1,6 @@
 import { Lock } from "lucide-react";
 
-import { Switch } from "@/components";
+import { Switch, Tooltip } from "@/components";
 import type { ModLayer } from "@/lib/tauri";
 
 interface LayerToggleListProps {
@@ -23,8 +23,9 @@ export function LayerToggleList({ layers, onToggle, disabled }: LayerToggleListP
             className="flex items-center justify-between rounded-md border border-surface-700 bg-surface-800/50 px-3 py-2"
           >
             <div className="min-w-0 flex-1">
-              <span className="text-sm text-surface-200">{layer.name}</span>
-              <span className="ml-2 text-xs text-surface-500">Priority {layer.priority}</span>
+              <Tooltip content={layer.name} side="bottom">
+                <span className="text-sm text-surface-200">{layer.displayName}</span>
+              </Tooltip>
             </div>
             {isBase ? (
               <Lock className="h-4 w-4 shrink-0 text-surface-500" />

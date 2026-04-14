@@ -8,6 +8,7 @@ import { workshopKeys } from "../../api/keys";
 interface CreateLayerVariables {
   projectPath: string;
   name: string;
+  displayName?: string;
   description?: string;
 }
 
@@ -15,8 +16,8 @@ export function useCreateLayer() {
   const queryClient = useQueryClient();
 
   return useMutation<WorkshopProject, AppError, CreateLayerVariables>({
-    mutationFn: async ({ projectPath, name, description }) => {
-      const result = await api.createProjectLayer(projectPath, name, description);
+    mutationFn: async ({ projectPath, name, displayName, description }) => {
+      const result = await api.createProjectLayer(projectPath, name, displayName, description);
       return unwrapForQuery(result);
     },
     onSuccess: (updatedProject) => {
@@ -24,6 +25,9 @@ export function useCreateLayer() {
         old?.map((p) => (p.path === updatedProject.path ? updatedProject : p)),
       );
       queryClient.setQueryData(workshopKeys.project(updatedProject.path), updatedProject);
+      queryClient.invalidateQueries({
+        queryKey: workshopKeys.layerInfo(updatedProject.path),
+      });
     },
   });
 }

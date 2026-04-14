@@ -314,6 +314,7 @@ impl Workshop {
                     .into_values()
                     .map(|layer_info| ModProjectLayer {
                         name: layer_info.name,
+                        display_name: layer_info.display_name,
                         priority: layer_info.priority,
                         description: None,
                         string_overrides: layer_info.string_overrides,
@@ -416,6 +417,7 @@ impl Workshop {
                 let meta_layer = metadata.layers.iter().find(|ml| ml.name == l.name);
                 ModProjectLayer {
                     name: l.name.clone(),
+                    display_name: meta_layer.and_then(|ml| ml.display_name.clone()),
                     priority: l.priority,
                     description: meta_layer.and_then(|ml| ml.description.clone()),
                     string_overrides: meta_layer

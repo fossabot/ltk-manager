@@ -51,7 +51,7 @@ export function EditLayerDialog({ open, layer, onClose, projectPath }: EditLayer
         <Dialog.Backdrop />
         <Dialog.Overlay size="sm">
           <Dialog.Header>
-            <Dialog.Title>Edit Layer: {layer.name}</Dialog.Title>
+            <Dialog.Title>Edit Layer: {layer.displayName}</Dialog.Title>
             <Dialog.Close />
           </Dialog.Header>
 

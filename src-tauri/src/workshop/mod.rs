@@ -84,10 +84,39 @@ pub struct WorkshopAuthor {
 #[serde(rename_all = "camelCase")]
 pub struct WorkshopLayer {
     pub name: String,
+    pub display_name: String,
     pub priority: i32,
     pub description: Option<String>,
     #[serde(default)]
     pub string_overrides: HashMap<String, HashMap<String, String>>,
+}
+
+/// Runtime info about a layer's content directory, fetched separately from config.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkshopLayerInfo {
+    pub wad_files: Vec<String>,
+}
+
+/// Derive a human-readable display name from a slug.
+///
+/// Splits on hyphens and capitalizes the first letter of each word.
+/// Example: `"high-res"` → `"High Res"`, `"base"` → `"Base"`
+pub(crate) fn slug_to_display_name(slug: &str) -> String {
+    slug.split('-')
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                Some(c) => {
+                    let upper: String = c.to_uppercase().collect();
+                    format!("{}{}", upper, chars.as_str())
+                }
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Metadata peeked from a .fantome archive without extracting content.
@@ -300,6 +329,10 @@ pub(crate) fn load_workshop_project(project_dir: &Path) -> AppResult<WorkshopPro
         .layers
         .iter()
         .map(|l| WorkshopLayer {
+            display_name: l
+                .display_name
+                .clone()
+                .unwrap_or_else(|| slug_to_display_name(&l.name)),
             name: l.name.clone(),
             priority: l.priority,
             description: l.description.clone(),

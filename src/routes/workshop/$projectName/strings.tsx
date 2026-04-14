@@ -179,7 +179,7 @@ function ProjectStrings() {
           <Tabs.List>
             {layers.map((layer) => (
               <Tabs.Tab key={layer.name} value={layer.name}>
-                {layer.name}
+                {layer.displayName}
                 <OverrideBadge layer={layer} />
               </Tabs.Tab>
             ))}

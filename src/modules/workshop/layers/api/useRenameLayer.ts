@@ -5,17 +5,18 @@ import { unwrapForQuery } from "@/utils/query";
 
 import { workshopKeys } from "../../api/keys";
 
-interface DeleteLayerVariables {
+interface RenameLayerVariables {
   projectPath: string;
   layerName: string;
+  newDisplayName: string;
 }
 
-export function useDeleteLayer() {
+export function useRenameLayer() {
   const queryClient = useQueryClient();
 
-  return useMutation<WorkshopProject, AppError, DeleteLayerVariables>({
-    mutationFn: async ({ projectPath, layerName }) => {
-      const result = await api.deleteProjectLayer(projectPath, layerName);
+  return useMutation<WorkshopProject, AppError, RenameLayerVariables>({
+    mutationFn: async ({ projectPath, layerName, newDisplayName }) => {
+      const result = await api.renameProjectLayer(projectPath, layerName, newDisplayName);
       return unwrapForQuery(result);
     },
     onSuccess: (updatedProject) => {

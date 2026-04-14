@@ -41,7 +41,7 @@ export function createMockInstalledMod(overrides?: Partial<InstalledMod>): Insta
     authors: ["Test Author"],
     enabled: true,
     installedAt: "2025-01-01T00:00:00.000Z",
-    layers: [{ name: "base", priority: 0, enabled: true }],
+    layers: [{ name: "base", displayName: "Base", priority: 0, enabled: true }],
     tags: [],
     champions: [],
     maps: [],

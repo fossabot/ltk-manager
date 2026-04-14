@@ -1,16 +1,18 @@
-import { EllipsisVertical, Lock, Pencil } from "lucide-react";
+import { EllipsisVertical, FolderOpen, Lock, Pencil } from "lucide-react";
 
-import { IconButton, Menu } from "@/components";
-import type { WorkshopLayer } from "@/lib/tauri";
+import { IconButton, Menu, Tooltip } from "@/components";
+import { api, type WorkshopLayer, type WorkshopLayerInfo } from "@/lib/tauri";
 
-import { getStringOverrideCount } from "./LayerCard";
+import { getStringOverrideCount, WadFilesBadge } from "./LayerCard";
 
 interface LockedLayerCardProps {
   layer: WorkshopLayer;
+  projectPath: string;
+  layerInfo?: WorkshopLayerInfo;
   onEdit: () => void;
 }
 
-export function LockedLayerCard({ layer, onEdit }: LockedLayerCardProps) {
+export function LockedLayerCard({ layer, projectPath, layerInfo, onEdit }: LockedLayerCardProps) {
   const stringOverrideCount = getStringOverrideCount(layer);
 
   return (
@@ -23,13 +25,21 @@ export function LockedLayerCard({ layer, onEdit }: LockedLayerCardProps) {
         <div className="flex items-center gap-3">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <h3 className="font-medium text-surface-100">{layer.name}</h3>
+              <Tooltip content={layer.name} side="bottom">
+                <h3 className="font-medium text-surface-100">{layer.displayName}</h3>
+              </Tooltip>
               <span className="rounded-full bg-surface-700 px-2 py-0.5 text-xs text-surface-400">
                 Priority {layer.priority}
               </span>
+              <WadFilesBadge layerInfo={layerInfo} />
             </div>
             {layer.description && (
               <p className="mt-1 text-sm text-surface-400">{layer.description}</p>
+            )}
+            {layerInfo && layerInfo.wadFiles.length === 0 && (
+              <p className="mt-1.5 text-xs text-surface-500">
+                No content yet - add WAD files to this layer&apos;s folder to get started.
+              </p>
             )}
           </div>
 
@@ -52,6 +62,15 @@ export function LockedLayerCard({ layer, onEdit }: LockedLayerCardProps) {
             <Menu.Portal>
               <Menu.Positioner align="end" sideOffset={4}>
                 <Menu.Popup>
+                  <Menu.Item
+                    icon={<FolderOpen className="h-4 w-4" />}
+                    onClick={async () => {
+                      const result = await api.getLayerContentPath(projectPath, layer.name);
+                      if (result.ok) api.revealInExplorer(result.value);
+                    }}
+                  >
+                    Open Folder
+                  </Menu.Item>
                   <Menu.Item icon={<Pencil className="h-4 w-4" />} onClick={onEdit}>
                     Edit
                   </Menu.Item>

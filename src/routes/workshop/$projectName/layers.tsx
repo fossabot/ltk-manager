@@ -12,6 +12,7 @@ import {
   SortableLayerList,
   useCreateLayer,
   useDeleteLayer,
+  useLayerInfo,
   useProjectContext,
   useReorderLayers,
 } from "@/modules/workshop";
@@ -29,14 +30,23 @@ function ProjectLayers() {
   const createLayer = useCreateLayer();
   const deleteLayer = useDeleteLayer();
   const reorderLayers = useReorderLayers();
+  const { data: layerInfoMap } = useLayerInfo(
+    project.path,
+    allLayers.map((l) => l.name),
+  );
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editLayer, setEditLayer] = useState<WorkshopLayer | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<WorkshopLayer | null>(null);
 
-  function handleCreateSubmit(name: string, description: string) {
+  function handleCreateSubmit(name: string, displayName: string, description: string) {
     createLayer.mutate(
-      { projectPath: project.path, name, description: description || undefined },
+      {
+        projectPath: project.path,
+        name,
+        displayName: displayName || undefined,
+        description: description || undefined,
+      },
       { onSuccess: () => setCreateOpen(false) },
     );
   }
@@ -79,12 +89,19 @@ function ProjectLayers() {
       ) : (
         <div className="space-y-2">
           {baseLayer && (
-            <LockedLayerCard layer={baseLayer} onEdit={() => setEditLayer(baseLayer)} />
+            <LockedLayerCard
+              layer={baseLayer}
+              projectPath={project.path}
+              layerInfo={layerInfoMap?.[baseLayer.name]}
+              onEdit={() => setEditLayer(baseLayer)}
+            />
           )}
 
           {sortableLayers.length > 0 && (
             <SortableLayerList
               layers={sortableLayers}
+              projectPath={project.path}
+              layerInfoMap={layerInfoMap}
               onReorder={(names) =>
                 reorderLayers.mutate({ projectPath: project.path, layerNames: names })
               }

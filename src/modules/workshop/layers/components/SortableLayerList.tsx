@@ -17,19 +17,28 @@ import {
 } from "@dnd-kit/sortable";
 import { useState } from "react";
 
-import type { WorkshopLayer } from "@/lib/tauri";
+import type { WorkshopLayer, WorkshopLayerInfo } from "@/lib/tauri";
 
 import { LayerCard } from "./LayerCard";
 import { SortableLayerCard } from "./SortableLayerCard";
 
 interface SortableLayerListProps {
   layers: WorkshopLayer[];
+  projectPath: string;
+  layerInfoMap?: Record<string, WorkshopLayerInfo>;
   onReorder: (layerNames: string[]) => void;
   onEdit: (layer: WorkshopLayer) => void;
   onDelete: (layer: WorkshopLayer) => void;
 }
 
-export function SortableLayerList({ layers, onReorder, onEdit, onDelete }: SortableLayerListProps) {
+export function SortableLayerList({
+  layers,
+  projectPath,
+  layerInfoMap,
+  onReorder,
+  onEdit,
+  onDelete,
+}: SortableLayerListProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
 
   const sensors = useSensors(
@@ -72,6 +81,8 @@ export function SortableLayerList({ layers, onReorder, onEdit, onDelete }: Sorta
             <SortableLayerCard
               key={layer.name}
               layer={layer}
+              projectPath={projectPath}
+              layerInfo={layerInfoMap?.[layer.name]}
               onEdit={() => onEdit(layer)}
               onDelete={() => onDelete(layer)}
             />

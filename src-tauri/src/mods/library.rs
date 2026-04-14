@@ -628,13 +628,20 @@ fn read_installed_mod(
     let layers = project
         .layers
         .iter()
-        .map(|l| ModLayer {
-            name: l.name.clone(),
-            priority: l.priority,
-            enabled: layer_states
-                .and_then(|states| states.get(&l.name))
-                .copied()
-                .unwrap_or(true),
+        .map(|l| {
+            let display_name = l
+                .display_name
+                .clone()
+                .unwrap_or_else(|| crate::workshop::slug_to_display_name(&l.name));
+            ModLayer {
+                name: l.name.clone(),
+                display_name,
+                priority: l.priority,
+                enabled: layer_states
+                    .and_then(|states| states.get(&l.name))
+                    .copied()
+                    .unwrap_or(true),
+            }
         })
         .collect::<Vec<_>>();
 
@@ -718,6 +725,7 @@ pub(super) fn extract_fantome_metadata(file_path: &Path, metadata_dir: &Path) ->
             .into_values()
             .map(|layer_info| ltk_mod_project::ModProjectLayer {
                 name: layer_info.name,
+                display_name: layer_info.display_name,
                 priority: layer_info.priority,
                 description: None,
                 string_overrides: layer_info.string_overrides,
@@ -792,6 +800,7 @@ pub(super) fn extract_modpkg_metadata(file_path: &Path, metadata_dir: &Path) -> 
             let meta_layer = metadata.layers.iter().find(|ml| ml.name == l.name);
             ModProjectLayer {
                 name: l.name.clone(),
+                display_name: meta_layer.and_then(|ml| ml.display_name.clone()),
                 priority: l.priority,
                 description: meta_layer.and_then(|ml| ml.description.clone()),
                 string_overrides: meta_layer

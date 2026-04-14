@@ -2,6 +2,7 @@
 
 export type WorkshopLayer = {
   name: string;
+  displayName: string;
   priority: number;
   description: string | null;
   stringOverrides: { [key in string]: { [key in string]: string } };

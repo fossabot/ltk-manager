@@ -2,7 +2,8 @@ use crate::error::{AppResult, IpcResult, MutexResultExt};
 use crate::state::SettingsState;
 use crate::workshop::{
     CreateProjectArgs, FantomePeekResult, ImportFantomeArgs, ImportGitRepoArgs, PackProjectArgs,
-    PackResult, SaveProjectConfigArgs, ValidationResult, WorkshopProject, WorkshopState,
+    PackResult, SaveProjectConfigArgs, ValidationResult, WorkshopLayerInfo, WorkshopProject,
+    WorkshopState,
 };
 use std::collections::HashMap;
 use tauri::State;
@@ -170,12 +171,26 @@ pub fn save_layer_string_overrides(
 pub fn create_project_layer(
     project_path: String,
     name: String,
+    display_name: Option<String>,
     description: Option<String>,
     workshop: State<WorkshopState>,
 ) -> IpcResult<WorkshopProject> {
     workshop
         .0
-        .create_layer(&project_path, &name, description)
+        .create_layer(&project_path, &name, display_name, description)
+        .into()
+}
+
+#[tauri::command]
+pub fn rename_project_layer(
+    project_path: String,
+    layer_name: String,
+    new_display_name: String,
+    workshop: State<WorkshopState>,
+) -> IpcResult<WorkshopProject> {
+    workshop
+        .0
+        .rename_layer(&project_path, &layer_name, &new_display_name)
         .into()
 }
 
@@ -199,6 +214,27 @@ pub fn update_layer_description(
         .0
         .update_layer_description(&project_path, &layer_name, description)
         .into()
+}
+
+#[tauri::command]
+pub fn get_layer_content_path(
+    project_path: String,
+    layer_name: String,
+    workshop: State<WorkshopState>,
+) -> IpcResult<String> {
+    workshop
+        .0
+        .get_layer_content_path(&project_path, &layer_name)
+        .into()
+}
+
+#[tauri::command]
+pub fn get_layer_info(
+    project_path: String,
+    layer_names: Vec<String>,
+    workshop: State<WorkshopState>,
+) -> IpcResult<HashMap<String, WorkshopLayerInfo>> {
+    workshop.0.get_layer_info(&project_path, layer_names).into()
 }
 
 #[tauri::command]

@@ -23,6 +23,7 @@ import type {
   SaveProjectConfigArgs,
   Settings,
   ValidationResult,
+  WorkshopLayerInfo,
   WorkshopProject,
 } from "@/lib/bindings";
 import type { Result } from "@/utils/result";
@@ -201,8 +202,28 @@ export const api = {
       layerName,
       stringOverrides,
     }),
-  createProjectLayer: (projectPath: string, name: string, description?: string) =>
-    invokeResult<WorkshopProject>("create_project_layer", { projectPath, name, description }),
+  getLayerContentPath: (projectPath: string, layerName: string) =>
+    invokeResult<string>("get_layer_content_path", { projectPath, layerName }),
+  getLayerInfo: (projectPath: string, layerNames: string[]) =>
+    invokeResult<Record<string, WorkshopLayerInfo>>("get_layer_info", { projectPath, layerNames }),
+  createProjectLayer: (
+    projectPath: string,
+    name: string,
+    displayName?: string,
+    description?: string,
+  ) =>
+    invokeResult<WorkshopProject>("create_project_layer", {
+      projectPath,
+      name,
+      displayName,
+      description,
+    }),
+  renameProjectLayer: (projectPath: string, layerName: string, newDisplayName: string) =>
+    invokeResult<WorkshopProject>("rename_project_layer", {
+      projectPath,
+      layerName,
+      newDisplayName,
+    }),
   deleteProjectLayer: (projectPath: string, layerName: string) =>
     invokeResult<WorkshopProject>("delete_project_layer", { projectPath, layerName }),
   reorderProjectLayers: (projectPath: string, layerNames: string[]) =>

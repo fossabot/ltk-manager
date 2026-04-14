@@ -35,7 +35,7 @@ export function DeleteLayerDialog({
               <Trash2 className="mt-0.5 h-5 w-5 shrink-0 text-red-400" />
               <div>
                 <h3 className="font-medium text-red-300">
-                  Delete layer &ldquo;{layer.name}&rdquo;?
+                  Delete layer &ldquo;{layer.displayName}&rdquo;?
                 </h3>
                 <p className="mt-1 text-sm text-surface-400">
                   This will remove the layer and delete its content directory. This action cannot be

@@ -238,6 +238,8 @@ pub struct Profile {
 #[serde(rename_all = "camelCase")]
 pub struct ModLayer {
     pub name: String,
+    #[serde(default)]
+    pub display_name: String,
     pub priority: i32,
     pub enabled: bool,
 }

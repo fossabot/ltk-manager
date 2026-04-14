@@ -1,16 +1,19 @@
+import { useRef } from "react";
 import { z } from "zod";
 
-import { Button, Dialog } from "@/components";
+import { Button, Dialog, Field } from "@/components";
 import { useAppForm } from "@/lib/form";
+import { toSlug } from "@/utils";
 
 const createLayerSchema = z.object({
+  displayName: z.string().min(1, "Display name is required"),
   name: z
     .string()
-    .min(1, "Layer name is required")
-    .regex(/^[a-z0-9-]+$/, "Name must be lowercase letters, numbers, and hyphens only")
+    .min(1, "Layer slug is required")
+    .regex(/^[a-z0-9-]+$/, "Slug must be lowercase letters, numbers, and hyphens only")
     .refine(
       (val) => !val.startsWith("-") && !val.endsWith("-"),
-      "Name cannot start or end with a hyphen",
+      "Slug cannot start or end with a hyphen",
     ),
   description: z.string(),
 });
@@ -18,7 +21,7 @@ const createLayerSchema = z.object({
 interface CreateLayerDialogProps {
   open: boolean;
   onClose: () => void;
-  onSubmit: (name: string, description: string) => void;
+  onSubmit: (name: string, displayName: string, description: string) => void;
   isPending?: boolean;
   existingNames: string[];
 }
@@ -30,18 +33,21 @@ export function CreateLayerDialog({
   isPending,
   existingNames,
 }: CreateLayerDialogProps) {
+  const slugManuallyEdited = useRef(false);
+
   const form = useAppForm({
-    defaultValues: { name: "", description: "" },
+    defaultValues: { displayName: "", name: "", description: "" },
     validators: {
       onChange: createLayerSchema,
     },
     onSubmit: ({ value }) => {
-      onSubmit(value.name, value.description);
+      onSubmit(value.name, value.displayName, value.description);
     },
   });
 
   function handleClose() {
     form.reset();
+    slugManuallyEdited.current = false;
     onClose();
   }
 
@@ -63,25 +69,68 @@ export function CreateLayerDialog({
           >
             <Dialog.Body className="space-y-4">
               <form.AppField
-                name="name"
-                validators={{
+                name="displayName"
+                listeners={{
                   onChange: ({ value }) => {
-                    if (existingNames.includes(value)) {
-                      return "A layer with this name already exists";
+                    if (!slugManuallyEdited.current) {
+                      form.setFieldValue("name", toSlug(value));
                     }
-                    return undefined;
                   },
                 }}
               >
                 {(field) => (
                   <field.TextField
-                    label="Layer Name"
+                    label="Display Name"
                     required
-                    placeholder="high-res"
-                    description="Lowercase letters, numbers, and hyphens only."
+                    placeholder="High Res Textures"
                     autoFocus
-                    transform={(value) => value.toLowerCase()}
                   />
+                )}
+              </form.AppField>
+
+              <form.AppField
+                name="name"
+                validators={{
+                  onChange: ({ value }) => {
+                    if (existingNames.includes(value)) {
+                      return "A layer with this slug already exists";
+                    }
+                    return undefined;
+                  },
+                }}
+                listeners={{
+                  onChange: ({ value }) => {
+                    const derived = toSlug(form.getFieldValue("displayName"));
+                    if (value !== derived) {
+                      slugManuallyEdited.current = true;
+                    }
+                  },
+                }}
+              >
+                {(field) => (
+                  <Field.Root>
+                    <Field.Label>
+                      <span className="text-xs text-surface-400">Layer Slug</span>
+                    </Field.Label>
+                    <Field.Control
+                      value={field.state.value}
+                      onChange={(e) => {
+                        field.handleChange(e.target.value.toLowerCase());
+                      }}
+                      onBlur={field.handleBlur}
+                      hasError={field.state.meta.errors.length > 0}
+                      placeholder="high-res-textures"
+                      className="text-sm text-surface-300"
+                    />
+                    <Field.Description>
+                      <span className="text-xs">
+                        Lowercase letters, numbers, and hyphens. This will be the folder name.
+                      </span>
+                    </Field.Description>
+                    {field.state.meta.errors.length > 0 && (
+                      <Field.Error>{field.state.meta.errors.join(", ")}</Field.Error>
+                    )}
+                  </Field.Root>
                 )}
               </form.AppField>
 
