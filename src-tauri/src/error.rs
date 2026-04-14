@@ -295,6 +295,22 @@ impl From<AppError> for AppErrorResponse {
     }
 }
 
+impl From<ltk_mod_project::ModProjectError> for AppError {
+    fn from(error: ltk_mod_project::ModProjectError) -> Self {
+        match error {
+            ltk_mod_project::ModProjectError::ConfigNotFound(path) => {
+                AppError::ProjectNotFound(path.display().to_string())
+            }
+            ltk_mod_project::ModProjectError::Io(e) => AppError::Io(e),
+            ltk_mod_project::ModProjectError::Json(e) => AppError::Serialization(e),
+            ltk_mod_project::ModProjectError::Toml(e) => AppError::Other(e.to_string()),
+            ltk_mod_project::ModProjectError::UnsupportedExtension(ext) => {
+                AppError::Other(format!("Unsupported config file extension: {}", ext))
+            }
+        }
+    }
+}
+
 /// Convenience type alias for internal Result usage
 pub type AppResult<T> = Result<T, AppError>;
 

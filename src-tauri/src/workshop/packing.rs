@@ -1,9 +1,10 @@
 use super::{
-    find_config_file, is_valid_project_name, load_mod_project, load_workshop_project, PackFormat,
-    PackProjectArgs, PackResult, ValidationResult, Workshop, WorkshopProject,
+    find_config_file, is_valid_project_name, load_workshop_project, PackFormat, PackProjectArgs,
+    PackResult, ValidationResult, Workshop, WorkshopProject,
 };
 use crate::error::{AppError, AppResult};
 use camino::Utf8PathBuf;
+use ltk_mod_project::ModProject;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -16,9 +17,9 @@ pub(crate) fn validate_project_at_path(path: &Path) -> AppResult<ValidationResul
     let mut errors = Vec::new();
     let mut warnings = Vec::new();
 
-    let config_path = match find_config_file(path) {
-        Some(p) => p,
-        None => {
+    let mod_project = match ModProject::load(path) {
+        Ok(p) => p,
+        Err(ltk_mod_project::ModProjectError::ConfigNotFound(_)) => {
             errors.push("No mod.config.json or mod.config.toml found".to_string());
             return Ok(ValidationResult {
                 valid: false,
@@ -26,10 +27,6 @@ pub(crate) fn validate_project_at_path(path: &Path) -> AppResult<ValidationResul
                 warnings,
             });
         }
-    };
-
-    let mod_project = match load_mod_project(&config_path) {
-        Ok(p) => p,
         Err(e) => {
             errors.push(format!("Failed to parse config: {}", e));
             return Ok(ValidationResult {
@@ -91,10 +88,7 @@ impl Workshop {
         let project_path_utf8 = Utf8PathBuf::try_from(project_path.clone())
             .map_err(|_| AppError::InvalidPath("Project path is not valid UTF-8".to_string()))?;
 
-        // Load and validate project
-        let config_path = find_config_file(&project_path)
-            .ok_or_else(|| AppError::ProjectNotFound(args.project_path.clone()))?;
-        let mut mod_project = load_mod_project(&config_path)?;
+        let mut mod_project = ModProject::load(&project_path)?;
 
         // Resolve thumbnail path so packers (fantome/modpkg) can include it
         if mod_project.thumbnail.is_none() {
@@ -119,7 +113,7 @@ impl Workshop {
                 let file_name = ltk_modpkg::project::create_file_name(&mod_project, None);
                 let output_path = output_dir.join(&file_name);
 
-                ltk_modpkg::project::pack_from_project(
+                ltk_modpkg::project::pack_from_project_with_config(
                     &project_path_utf8,
                     &output_path,
                     &mod_project,
@@ -220,10 +214,7 @@ impl Workshop {
 
         let _ = fs::remove_file(project_dir.join("thumbnail.png"));
 
-        // Persist the thumbnail reference in mod.config.json
-        let config_path = find_config_file(&project_dir)
-            .ok_or_else(|| AppError::ProjectNotFound(project_path.to_string()))?;
-        let mut mod_project = load_mod_project(&config_path)?;
+        let mut mod_project = ModProject::load(&project_dir)?;
         mod_project.thumbnail = Some("thumbnail.webp".to_string());
         let json_config_path = project_dir.join("mod.config.json");
         fs::write(
@@ -248,9 +239,7 @@ impl Workshop {
         let _ = fs::remove_file(project_dir.join("thumbnail.webp"));
         let _ = fs::remove_file(project_dir.join("thumbnail.png"));
 
-        let config_path = find_config_file(&project_dir)
-            .ok_or_else(|| AppError::ProjectNotFound(project_path.to_string()))?;
-        let mut mod_project = load_mod_project(&config_path)?;
+        let mut mod_project = ModProject::load(&project_dir)?;
         mod_project.thumbnail = None;
         let json_config_path = project_dir.join("mod.config.json");
         fs::write(

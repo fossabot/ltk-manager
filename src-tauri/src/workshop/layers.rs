@@ -1,8 +1,8 @@
 use super::{
-    find_config_file, is_valid_project_name, load_mod_project, load_workshop_project, Workshop,
-    WorkshopLayerInfo, WorkshopProject,
+    is_valid_project_name, load_workshop_project, Workshop, WorkshopLayerInfo, WorkshopProject,
 };
 use crate::error::{AppError, AppResult};
+use ltk_mod_project::ModProject;
 use ltk_mod_project::ModProjectLayer;
 use std::collections::HashMap;
 use std::fs;
@@ -23,9 +23,7 @@ pub(crate) fn create_layer_at_path(
         ));
     }
 
-    let config_path = find_config_file(path)
-        .ok_or_else(|| AppError::ProjectNotFound(path.display().to_string()))?;
-    let mut mod_project = load_mod_project(&config_path)?;
+    let mut mod_project = ModProject::load(path)?;
 
     if mod_project.layers.iter().any(|l| l.name == name) {
         return Err(AppError::ValidationFailed(format!(
@@ -67,9 +65,7 @@ pub(crate) fn delete_layer_at_path(path: &Path, layer_name: &str) -> AppResult<W
         ));
     }
 
-    let config_path = find_config_file(path)
-        .ok_or_else(|| AppError::ProjectNotFound(path.display().to_string()))?;
-    let mut mod_project = load_mod_project(&config_path)?;
+    let mut mod_project = ModProject::load(path)?;
 
     let layer_index = mod_project
         .layers
@@ -99,9 +95,7 @@ pub(crate) fn update_layer_description_at_path(
     layer_name: &str,
     description: Option<String>,
 ) -> AppResult<WorkshopProject> {
-    let config_path = find_config_file(path)
-        .ok_or_else(|| AppError::ProjectNotFound(path.display().to_string()))?;
-    let mut mod_project = load_mod_project(&config_path)?;
+    let mut mod_project = ModProject::load(path)?;
 
     let layer = mod_project
         .layers
@@ -149,9 +143,7 @@ pub(crate) fn rename_layer_at_path(
         ));
     }
 
-    let config_path = find_config_file(path)
-        .ok_or_else(|| AppError::ProjectNotFound(path.display().to_string()))?;
-    let mut mod_project = load_mod_project(&config_path)?;
+    let mut mod_project = ModProject::load(path)?;
 
     if new_name != layer_name && mod_project.layers.iter().any(|l| l.name == new_name) {
         return Err(AppError::ValidationFailed(format!(
@@ -191,9 +183,7 @@ pub(crate) fn reorder_layers_at_path(
     path: &Path,
     layer_names: Vec<String>,
 ) -> AppResult<WorkshopProject> {
-    let config_path = find_config_file(path)
-        .ok_or_else(|| AppError::ProjectNotFound(path.display().to_string()))?;
-    let mut mod_project = load_mod_project(&config_path)?;
+    let mut mod_project = ModProject::load(path)?;
 
     if layer_names.contains(&"base".to_string()) {
         return Err(AppError::ValidationFailed(
@@ -252,10 +242,7 @@ pub(crate) fn save_layer_string_overrides_at_path(
     layer_name: &str,
     string_overrides: HashMap<String, HashMap<String, String>>,
 ) -> AppResult<WorkshopProject> {
-    let config_path = find_config_file(path)
-        .ok_or_else(|| AppError::ProjectNotFound(path.display().to_string()))?;
-
-    let mut mod_project = load_mod_project(&config_path)?;
+    let mut mod_project = ModProject::load(path)?;
 
     let layer = mod_project
         .layers
@@ -460,9 +447,7 @@ mod tests {
     }
 
     fn load_layers(dir: &std::path::Path) -> Vec<ModProjectLayer> {
-        let config_path = find_config_file(dir).unwrap();
-        let project = load_mod_project(&config_path).unwrap();
-        project.layers
+        ModProject::load(dir).unwrap().layers
     }
 
     #[test]
