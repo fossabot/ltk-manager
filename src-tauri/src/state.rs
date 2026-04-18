@@ -125,8 +125,45 @@ fn default_trusted_domains() -> Vec<String> {
     vec!["runeforge.dev".to_string(), "divineskins.gg".to_string()]
 }
 
-fn default_wad_blocklist() -> Vec<String> {
+fn default_wad_blocklist() -> Vec<WadBlocklistEntry> {
     vec![]
+}
+
+/// A single entry in the WAD blocklist.
+///
+/// `Exact` matches a literal filename (case-insensitively). `Regex` matches
+/// against every WAD filename in the game install; the pattern is always
+/// applied case-insensitively.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, TS)]
+#[ts(export)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum WadBlocklistEntry {
+    Exact { value: String },
+    Regex { value: String },
+}
+
+/// Accepts both the legacy `["Name.wad.client", ...]` format and the new
+/// tagged `[{ "kind": "exact", "value": "..." }, ...]` format. Legacy strings
+/// are migrated to `Exact` entries.
+fn deserialize_wad_blocklist<'de, D>(deserializer: D) -> Result<Vec<WadBlocklistEntry>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum RawEntry {
+        Legacy(String),
+        Tagged(WadBlocklistEntry),
+    }
+
+    let raw: Vec<RawEntry> = Vec::deserialize(deserializer)?;
+    Ok(raw
+        .into_iter()
+        .map(|entry| match entry {
+            RawEntry::Legacy(value) => WadBlocklistEntry::Exact { value },
+            RawEntry::Tagged(entry) => entry,
+        })
+        .collect())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -192,8 +229,11 @@ pub struct Settings {
     #[serde(default = "default_true")]
     pub block_scripts_wad: bool,
     /// Additional WAD files to exclude from overlay building.
-    #[serde(default = "default_wad_blocklist")]
-    pub wad_blocklist: Vec<String>,
+    #[serde(
+        default = "default_wad_blocklist",
+        deserialize_with = "deserialize_wad_blocklist"
+    )]
+    pub wad_blocklist: Vec<WadBlocklistEntry>,
     #[serde(default)]
     pub author_profiles: Vec<AuthorProfile>,
     #[serde(default)]
@@ -331,6 +371,94 @@ mod tests {
         assert!(settings.league_path.is_none());
         assert!(settings.mod_storage_path.is_none());
         assert!(!settings.first_run_complete);
+    }
+
+    #[test]
+    fn wad_blocklist_accepts_legacy_string_array() {
+        let json = r#"{
+            "firstRunComplete": false, "theme": "system", "accentColor": {},
+            "patchTft": false, "migrationDismissed": false,
+            "wadBlocklist": ["Map12.wad.client", "Aatrox.wad.client"]
+        }"#;
+        let settings: Settings = serde_json::from_str(json).unwrap();
+        assert_eq!(settings.wad_blocklist.len(), 2);
+        assert_eq!(
+            settings.wad_blocklist[0],
+            WadBlocklistEntry::Exact {
+                value: "Map12.wad.client".to_string()
+            }
+        );
+        assert_eq!(
+            settings.wad_blocklist[1],
+            WadBlocklistEntry::Exact {
+                value: "Aatrox.wad.client".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn wad_blocklist_accepts_tagged_entries() {
+        let json = r#"{
+            "firstRunComplete": false, "theme": "system", "accentColor": {},
+            "patchTft": false, "migrationDismissed": false,
+            "wadBlocklist": [
+                { "kind": "exact", "value": "Map12.wad.client" },
+                { "kind": "regex", "value": "^map\\d+\\.en_us\\.wad\\.client$" }
+            ]
+        }"#;
+        let settings: Settings = serde_json::from_str(json).unwrap();
+        assert_eq!(settings.wad_blocklist.len(), 2);
+        assert!(matches!(
+            settings.wad_blocklist[0],
+            WadBlocklistEntry::Exact { .. }
+        ));
+        assert!(matches!(
+            settings.wad_blocklist[1],
+            WadBlocklistEntry::Regex { .. }
+        ));
+    }
+
+    #[test]
+    fn wad_blocklist_mixed_legacy_and_tagged() {
+        let json = r#"{
+            "firstRunComplete": false, "theme": "system", "accentColor": {},
+            "patchTft": false, "migrationDismissed": false,
+            "wadBlocklist": [
+                "Legacy.wad.client",
+                { "kind": "regex", "value": "^tft" }
+            ]
+        }"#;
+        let settings: Settings = serde_json::from_str(json).unwrap();
+        assert_eq!(settings.wad_blocklist.len(), 2);
+        assert_eq!(
+            settings.wad_blocklist[0],
+            WadBlocklistEntry::Exact {
+                value: "Legacy.wad.client".to_string()
+            }
+        );
+        assert_eq!(
+            settings.wad_blocklist[1],
+            WadBlocklistEntry::Regex {
+                value: "^tft".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn wad_blocklist_serializes_as_tagged() {
+        let entries = vec![
+            WadBlocklistEntry::Exact {
+                value: "foo.wad.client".to_string(),
+            },
+            WadBlocklistEntry::Regex {
+                value: "bar".to_string(),
+            },
+        ];
+        let json = serde_json::to_value(&entries).unwrap();
+        assert_eq!(json[0]["kind"], "exact");
+        assert_eq!(json[0]["value"], "foo.wad.client");
+        assert_eq!(json[1]["kind"], "regex");
+        assert_eq!(json[1]["value"], "bar");
     }
 
     #[test]

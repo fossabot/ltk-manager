@@ -322,7 +322,11 @@ export function SelectField({
         name={name}
       >
         <SelectTrigger hasError={!!error} className={triggerClassName}>
-          <SelectValue />
+          <SelectValue>
+            {(current) =>
+              options.find((o) => o.value === current)?.label ?? (current as string | null) ?? ""
+            }
+          </SelectValue>
           <SelectIcon />
         </SelectTrigger>
         <SelectPortal>

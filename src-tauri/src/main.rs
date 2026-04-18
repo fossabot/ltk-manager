@@ -53,6 +53,7 @@ fn main() {
             commands::auto_detect_league_path,
             commands::validate_league_path,
             commands::check_setup_required,
+            commands::list_available_wads,
             // Mods
             commands::get_installed_mods,
             commands::install_mod,

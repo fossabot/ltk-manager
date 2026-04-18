@@ -83,6 +83,7 @@ export const api = {
   autoDetectLeaguePath: () => invokeResult<string | null>("auto_detect_league_path"),
   validateLeaguePath: (path: string) => invokeResult<boolean>("validate_league_path", { path }),
   checkSetupRequired: () => invokeResult<boolean>("check_setup_required"),
+  listAvailableWads: () => invokeResult<string[]>("list_available_wads"),
 
   // Mods
   getInstalledMods: () => invokeResult<InstalledMod[]>("get_installed_mods"),

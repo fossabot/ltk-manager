@@ -39,6 +39,7 @@ export type { SaveProjectConfigArgs } from "./SaveProjectConfigArgs";
 export type { Settings } from "./Settings";
 export type { Theme } from "./Theme";
 export type { ValidationResult } from "./ValidationResult";
+export type { WadBlocklistEntry } from "./WadBlocklistEntry";
 export type { WorkshopAuthor } from "./WorkshopAuthor";
 export type { WorkshopLayer } from "./WorkshopLayer";
 export type { WorkshopLayerInfo } from "./WorkshopLayerInfo";

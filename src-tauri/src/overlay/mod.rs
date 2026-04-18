@@ -1,8 +1,8 @@
 use crate::error::{AppError, AppResult};
 use crate::mods::{ModLibrary, WadReportState};
-use crate::state::Settings;
+use crate::state::{Settings, WadBlocklistEntry};
 use camino::Utf8PathBuf;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::{Emitter, Manager};
 
 const SCRIPTS_WAD: &str = "scripts.wad.client";
@@ -68,7 +68,7 @@ pub fn ensure_overlay(
     );
 
     // Convert to Utf8PathBuf for ltk_overlay API
-    let utf8_game_dir = Utf8PathBuf::from_path_buf(game_dir)
+    let utf8_game_dir = Utf8PathBuf::from_path_buf(game_dir.clone())
         .map_err(|p| AppError::Other(format!("Non-UTF-8 game directory path: {}", p.display())))?;
     let utf8_overlay_root = Utf8PathBuf::from_path_buf(overlay_root.clone())
         .map_err(|p| AppError::Other(format!("Non-UTF-8 overlay root path: {}", p.display())))?;
@@ -76,18 +76,16 @@ pub fn ensure_overlay(
         AppError::Other(format!("Non-UTF-8 profile directory path: {}", p.display()))
     })?;
 
-    // Build WAD blocklist from settings
-    let mut blocked_wads: Vec<String> = settings
-        .wad_blocklist
-        .iter()
-        .map(|w| w.to_lowercase())
-        .collect();
-    if settings.block_scripts_wad && !blocked_wads.contains(&SCRIPTS_WAD.to_string()) {
-        blocked_wads.push(SCRIPTS_WAD.to_string());
-    }
-    if !settings.patch_tft && !blocked_wads.contains(&TFT_WAD.to_string()) {
-        blocked_wads.push(TFT_WAD.to_string());
-    }
+    let available_wads = list_game_wads(&game_dir).unwrap_or_else(|e| {
+        tracing::warn!(
+            "Failed to enumerate game WADs for regex expansion: {}; \
+             regex blocklist entries will match nothing",
+            e
+        );
+        Vec::new()
+    });
+    let blocked_wads = resolve_blocked_wads(settings, &available_wads);
+    tracing::info!("Overlay: blocked_wads count={}", blocked_wads.len());
 
     // Build overlay using ltk_overlay crate
     let app_handle_clone = library.app_handle().clone();
@@ -158,6 +156,100 @@ pub fn ensure_overlay(
     }
 
     Ok(overlay_root)
+}
+
+/// Resolve the user's blocklist settings into a concrete, deduped list of WAD
+/// filenames to hand to `ltk_overlay::OverlayBuilder::with_blocked_wads`.
+///
+/// - `Exact` entries are lowercased and passed through as-is.
+/// - `Regex` entries are compiled case-insensitively and expanded against
+///   `available_wads`; invalid patterns are logged and skipped so one bad entry
+///   can't break the whole patch.
+/// - `block_scripts_wad` and `!patch_tft` add their respective WADs.
+///
+/// `available_wads` should come from `list_game_wads`; pass an empty slice if
+/// enumeration failed (regex entries then match nothing).
+pub(crate) fn resolve_blocked_wads(settings: &Settings, available_wads: &[String]) -> Vec<String> {
+    let mut blocked: Vec<String> = Vec::new();
+
+    for entry in &settings.wad_blocklist {
+        match entry {
+            WadBlocklistEntry::Exact { value } => {
+                blocked.push(value.to_lowercase());
+            }
+            WadBlocklistEntry::Regex { value } => {
+                match regex::Regex::new(&format!("(?i){}", value)) {
+                    Ok(re) => {
+                        for wad in available_wads {
+                            if re.is_match(wad) {
+                                blocked.push(wad.clone());
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("Invalid regex in wad_blocklist {:?}: {}", value, e);
+                    }
+                }
+            }
+        }
+    }
+
+    if settings.block_scripts_wad {
+        blocked.push(SCRIPTS_WAD.to_string());
+    }
+    if !settings.patch_tft {
+        blocked.push(TFT_WAD.to_string());
+    }
+
+    blocked.sort();
+    blocked.dedup();
+    blocked
+}
+
+/// Enumerate every `.wad` / `.wad.client` filename under the game's `DATA` directory.
+///
+/// Returns lowercased, deduplicated filenames (not paths) sorted alphabetically.
+/// The WAD filename space is effectively flat from the overlay's perspective —
+/// `OverlayBuilder::with_blocked_wads` matches by filename only — so we discard
+/// the directory part.
+pub(crate) fn list_game_wads(game_dir: &Path) -> AppResult<Vec<String>> {
+    let data_dir = game_dir.join("DATA");
+    if !data_dir.exists() {
+        return Err(AppError::ValidationFailed(format!(
+            "Game DATA directory does not exist: {}",
+            data_dir.display()
+        )));
+    }
+
+    let mut out: Vec<String> = Vec::new();
+    let mut stack: Vec<PathBuf> = vec![data_dir];
+    while let Some(dir) = stack.pop() {
+        let read = match std::fs::read_dir(&dir) {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!("Failed to read {}: {}", dir.display(), e);
+                continue;
+            }
+        };
+        for entry in read.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            let lower = name.to_ascii_lowercase();
+            if lower.ends_with(".wad") || lower.ends_with(".wad.client") {
+                out.push(lower);
+            }
+        }
+    }
+
+    out.sort();
+    out.dedup();
+    Ok(out)
 }
 
 pub(crate) fn resolve_game_dir(settings: &Settings) -> AppResult<PathBuf> {
@@ -231,6 +323,112 @@ mod tests {
         };
         assert_matches!(
             resolve_game_dir(&settings),
+            Err(AppError::ValidationFailed(_))
+        );
+    }
+
+    #[test]
+    fn list_game_wads_finds_nested_wads_and_lowercases() {
+        let dir = tempfile::tempdir().unwrap();
+        let data = dir.path().join("DATA");
+        let final_dir = data.join("FINAL").join("Champions");
+        std::fs::create_dir_all(&final_dir).unwrap();
+        std::fs::write(final_dir.join("Aatrox.wad.client"), b"").unwrap();
+        std::fs::write(final_dir.join("Ahri.wad.client"), b"").unwrap();
+        std::fs::write(data.join("Shared.wad"), b"").unwrap();
+        std::fs::write(final_dir.join("not-a-wad.txt"), b"").unwrap();
+
+        let wads = list_game_wads(dir.path()).unwrap();
+        assert!(wads.contains(&"aatrox.wad.client".to_string()));
+        assert!(wads.contains(&"ahri.wad.client".to_string()));
+        assert!(wads.contains(&"shared.wad".to_string()));
+        assert_eq!(wads.len(), 3);
+    }
+
+    #[test]
+    fn resolve_blocked_wads_exact_lowercased_and_scripts_added_by_default() {
+        let settings = Settings {
+            wad_blocklist: vec![WadBlocklistEntry::Exact {
+                value: "Aatrox.wad.client".to_string(),
+            }],
+            ..Settings::default()
+        };
+        let result = resolve_blocked_wads(&settings, &[]);
+        assert!(result.contains(&"aatrox.wad.client".to_string()));
+        assert!(result.contains(&"scripts.wad.client".to_string()));
+        assert!(result.contains(&"map22.wad.client".to_string()));
+    }
+
+    #[test]
+    fn resolve_blocked_wads_regex_expanded_against_available() {
+        let settings = Settings {
+            block_scripts_wad: false,
+            patch_tft: true,
+            wad_blocklist: vec![WadBlocklistEntry::Regex {
+                value: r"^map\d+\.en_us\.wad\.client$".to_string(),
+            }],
+            ..Settings::default()
+        };
+        let available = vec![
+            "map11.en_us.wad.client".to_string(),
+            "map12.wad.client".to_string(),
+            "map22.en_us.wad.client".to_string(),
+            "aatrox.wad.client".to_string(),
+        ];
+        let result = resolve_blocked_wads(&settings, &available);
+        assert_eq!(
+            result,
+            vec![
+                "map11.en_us.wad.client".to_string(),
+                "map22.en_us.wad.client".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn resolve_blocked_wads_invalid_regex_skipped_and_others_kept() {
+        let settings = Settings {
+            block_scripts_wad: false,
+            patch_tft: true,
+            wad_blocklist: vec![
+                WadBlocklistEntry::Regex {
+                    value: "[bad(".to_string(),
+                },
+                WadBlocklistEntry::Exact {
+                    value: "keeper.wad.client".to_string(),
+                },
+            ],
+            ..Settings::default()
+        };
+        let result = resolve_blocked_wads(&settings, &[]);
+        assert_eq!(result, vec!["keeper.wad.client".to_string()]);
+    }
+
+    #[test]
+    fn resolve_blocked_wads_dedupes_overlapping_entries() {
+        let settings = Settings {
+            block_scripts_wad: true,
+            patch_tft: true,
+            wad_blocklist: vec![
+                WadBlocklistEntry::Exact {
+                    value: "Scripts.wad.client".to_string(),
+                },
+                WadBlocklistEntry::Regex {
+                    value: "^scripts".to_string(),
+                },
+            ],
+            ..Settings::default()
+        };
+        let available = vec!["scripts.wad.client".to_string()];
+        let result = resolve_blocked_wads(&settings, &available);
+        assert_eq!(result, vec!["scripts.wad.client".to_string()]);
+    }
+
+    #[test]
+    fn list_game_wads_errors_when_data_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_matches!(
+            list_game_wads(dir.path()),
             Err(AppError::ValidationFailed(_))
         );
     }

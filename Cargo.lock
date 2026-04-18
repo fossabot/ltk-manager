@@ -2833,6 +2833,7 @@ dependencies = [
  "ltk_wad",
  "notify",
  "notify-debouncer-mini",
+ "regex",
  "reqwest 0.12.28",
  "semver",
  "serde",

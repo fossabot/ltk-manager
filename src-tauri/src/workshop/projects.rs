@@ -52,7 +52,7 @@ impl Workshop {
         }
 
         // Sort by last modified (newest first)
-        projects.sort_by(|a, b| b.last_modified.cmp(&a.last_modified));
+        projects.sort_by_key(|p| std::cmp::Reverse(p.last_modified));
 
         Ok(projects)
     }

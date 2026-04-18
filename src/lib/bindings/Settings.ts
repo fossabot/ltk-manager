@@ -2,6 +2,7 @@
 import type { AccentColor } from "./AccentColor";
 import type { AuthorProfile } from "./AuthorProfile";
 import type { Theme } from "./Theme";
+import type { WadBlocklistEntry } from "./WadBlocklistEntry";
 
 export type Settings = {
   leaguePath: string | null;
@@ -86,7 +87,7 @@ export type Settings = {
   /**
    * Additional WAD files to exclude from overlay building.
    */
-  wadBlocklist: Array<string>;
+  wadBlocklist: Array<WadBlocklistEntry>;
   authorProfiles: Array<AuthorProfile>;
   defaultAuthorProfileId: string | null;
 };
