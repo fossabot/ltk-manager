@@ -44,7 +44,7 @@ export function ContentBrowser({ project }: ContentBrowserProps) {
         onSelect={setSelectedLayerName}
       />
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-surface-900/95">
         {isLoading && (
           <div className="flex items-center gap-2 px-4 py-4 text-sm text-surface-400">
             <Spinner size="sm" />

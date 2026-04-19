@@ -21,7 +21,7 @@ export function SectionCard({
   return (
     <section
       className={twMerge(
-        "rounded-xl border border-surface-700/50 bg-surface-900/80 p-5",
+        "rounded-xl border border-surface-700/50 bg-surface-900/95 p-5",
         className,
       )}
     >

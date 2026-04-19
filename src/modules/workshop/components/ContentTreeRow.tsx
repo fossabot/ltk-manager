@@ -145,7 +145,7 @@ function DirRow({
       <FolderIcon
         className={twMerge(
           "h-3.5 w-3.5 shrink-0",
-          isExpanded ? "text-accent-400" : "text-accent-300/70",
+          isExpanded ? "text-accent-400" : "text-surface-400",
         )}
         strokeWidth={1.75}
       />

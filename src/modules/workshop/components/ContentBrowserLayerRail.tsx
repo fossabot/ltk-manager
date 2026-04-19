@@ -141,7 +141,7 @@ export function ContentBrowserLayerRail({
   }
 
   return (
-    <aside className="flex h-full w-56 shrink-0 flex-col rounded-md border border-surface-700/50 bg-surface-900/60">
+    <aside className="flex h-full w-56 shrink-0 flex-col rounded-md border border-surface-700/50 bg-surface-900/95">
       <div className="flex items-center justify-between border-b border-surface-700/50 px-3 py-2">
         <span className="flex items-center gap-1.5 text-xs font-medium tracking-wide text-surface-400 uppercase">
           <FolderTree className="h-3.5 w-3.5" />
