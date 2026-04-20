@@ -4,7 +4,7 @@ import { Loader2 } from "lucide-react";
 import { useEffect } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 
-import { useAutoStartPatcher, usePageTransition, useReducedMotion } from "@/hooks";
+import { useAutoStartPatcher, useReducedMotion } from "@/hooks";
 import { ProtocolInstallDialog, useDeepLinkListener } from "@/modules/deep-link";
 import { useLibraryWatcher } from "@/modules/library";
 import { useAppInfo, useCheckSetupRequired, useSettings } from "@/modules/settings";
@@ -22,7 +22,6 @@ function RootLayout() {
 
   const zoomLevel = useDisplayStore((s) => s.zoomLevel);
   const isReducedMotion = useReducedMotion();
-  const pageTransition = usePageTransition();
 
   useDevLogStream();
   useDeepLinkListener();
@@ -79,10 +78,7 @@ function RootLayout() {
       <TitleBar appInfo={appInfo} />
       <main className="relative flex-1 overflow-hidden">
         <UpdateNotification />
-        <div
-          className={`h-full ${pageTransition.className ?? ""}`}
-          onAnimationEnd={pageTransition.onAnimationEnd}
-        >
+        <div className="h-full">
           <Outlet />
         </div>
       </main>
